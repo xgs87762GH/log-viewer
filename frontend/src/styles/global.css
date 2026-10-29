@@ -1,0 +1,173 @@
+/* ═══════════════════════════════════════════════════════════
+   全局样式 —— reset / 主题变量 / 三栏布局壳 / 日志行渲染
+   Element Plus 组件样式由按需插件注入；本文件只管壳层与 v-html 日志行。
+   ═══════════════════════════════════════════════════════════ */
+
+* { margin: 0; padding: 0; box-sizing: border-box }
+
+:root {
+  --bg: #0d1117; --s1: #161b22; --s2: #21262d; --bd: #30363d; --bd2: #484f58;
+  --t1: #e6edf3; --t2: #8b949e; --t3: #6e7681;
+  --ac: #58a6ff; --ac2: #388bfd;
+  --info: #3fb950; --warn: #d29922; --err: #f85149; --dbg: #79c0ff; --trc: #d2a8ff;
+  --info-bg: rgba(63, 185, 80, .12); --info-bd: rgba(63, 185, 80, .28);
+  --warn-bg: rgba(210, 153, 34, .12); --warn-bd: rgba(210, 153, 34, .28);
+  --err-bg:  rgba(248, 81, 73, .12); --err-bd:  rgba(248, 81, 73, .28);
+  --dbg-bg:  rgba(121, 192, 255, .12); --dbg-bd:  rgba(121, 192, 255, .28);
+  --trc-bg:  rgba(210, 168, 255, .12); --trc-bd:  rgba(210, 168, 255, .28);
+  --r: 8px;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-log: Consolas, 'Courier New', 'Microsoft YaHei', monospace;
+  --row-h: 22px;
+  --fs-base: 14px; --fs-log: 13px; --lh-log: 1.65;
+  --el-color-primary: var(--ac);
+  --log-bg: #111418; --log-fg: #c8cdd5; --log-muted: #6b7280; --log-num: #555b66;
+  --log-sql-tag: #6aadb3; --log-sql-kw: #7a9fc2; --log-sql-str: #a89070; --log-res: #7a9e80;
+}
+
+html.dark { color-scheme: dark }
+html.theme-warm { color-scheme: dark }
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--t1);
+  height: 100vh;
+  overflow: hidden;
+  font-size: var(--fs-base);
+}
+
+/* ── 三栏布局壳（结构不变） ── */
+.app-shell { display: flex; height: 100vh }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden }
+
+@media (max-width: 900px) {
+  .app-shell { min-width: 0 }
+  .main { min-width: 0 }
+}
+
+/* 级别色（兼容旧 class；新 UI 优先用 el-tag） */
+.lvl-info  { color: var(--info); background: var(--info-bg); border-color: var(--info-bd) }
+.lvl-warn  { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-bd) }
+.lvl-error { color: var(--err);  background: var(--err-bg);  border-color: var(--err-bd) }
+.lvl-debug { color: var(--dbg);  background: var(--dbg-bg);  border-color: var(--dbg-bd) }
+.lvl-trace { color: var(--trc);  background: var(--trc-bg);  border-color: var(--trc-bd) }
+
+/* ══ 日志渲染（v-html，必须全局）
+   深色控制台 + 低饱和高亮，避免关键字/字符串过亮刺眼
+   ═══════════════════════════════════════════════════════════ */
+.log-wrap {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background: var(--log-bg);
+  color: var(--log-fg);
+}
+.ln {
+  display: flex;
+  height: var(--row-h, 22px);
+  line-height: var(--row-h, 22px);
+  overflow: hidden;
+  font-size: var(--fs-log);
+  font-family: var(--font-log);
+  color: var(--log-fg);
+  border-left: 3px solid transparent;
+  box-sizing: border-box;
+}
+/* 悬停只高亮，绝不撑开行高 / 自动换行展开 */
+.ln:hover {
+  background: color-mix(in srgb, var(--ac) 8%, transparent);
+}
+.ln .no {
+  color: var(--log-num);
+  min-width: 52px;
+  text-align: right;
+  padding: 0 10px 0 6px;
+  user-select: none;
+  font-family: var(--font-log);
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.ln .tx {
+  flex: 1;
+  min-width: 0;
+  padding-right: 16px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-log);
+  color: inherit;
+}
+
+.ln.wrap {
+  /* 高度由虚拟列表行内联 style 给出，与 visualLines 估算一致 */
+  height: auto;
+  min-height: var(--row-h, 22px);
+  line-height: var(--lh-log);
+  overflow: hidden;
+  padding: 0;
+  align-items: flex-start;
+}
+.ln.wrap .tx {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: visible;
+  text-overflow: unset;
+}
+.ln.wrap:hover { background: color-mix(in srgb, var(--ac) 6%, transparent) }
+
+/* 级别：左边条为主，正文保持中性色；未识别级别也正常显示 */
+.ln-I { border-left-color: var(--info) }
+.ln-W { border-left-color: var(--warn); background: var(--warn-bg) }
+.ln-E { border-left-color: var(--err); background: var(--err-bg) }
+.ln-D { border-left-color: var(--dbg) }
+.ln-T { border-left-color: var(--trc) }
+
+.ln .ts { color: var(--log-muted) }
+.ln .thr {
+  color: color-mix(in srgb, var(--trc) 75%, var(--log-fg));
+  opacity: 0.9;
+}
+.ln .stk { color: var(--log-muted); font-style: italic }
+.ln .exc { color: var(--err); font-weight: 600 }
+
+.ln .kw { font-weight: 600 }
+.ln-I .kw { color: var(--info) }
+.ln-W .kw { color: var(--warn) }
+.ln-E .kw { color: var(--err) }
+.ln-D .kw { color: var(--dbg) }
+.ln-T .kw { color: var(--trc) }
+
+.ln .http { font-weight: 600 }
+.ln .http-2 { color: var(--info) }
+.ln .http-4 { color: var(--warn) }
+.ln .http-5 { color: var(--err) }
+
+.ln .sql-tag {
+  color: var(--log-sql-tag);
+  background: color-mix(in srgb, var(--log-sql-tag) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--log-sql-tag) 28%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-weight: 600;
+}
+.ln .sql-kw {
+  color: var(--log-sql-kw);
+  font-weight: 600;
+}
+.ln .sql-str { color: var(--log-sql-str) }
+.ln .sql { color: var(--log-sql-kw) }
+
+.ln .meth { color: var(--trc) }
+.ln .res {
+  color: var(--log-res);
+  font-weight: 500;
+}
+.ln mark.hit {
+  background: color-mix(in srgb, #f0c000 72%, transparent);
+  color: var(--log-fg);
+  border-radius: 2px;
+  padding: 0 2px;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #f0c000 55%, transparent);
+}

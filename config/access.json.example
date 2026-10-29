@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "heartbeatSec": 25,
+  "onlineTimeoutSec": 90,
+  "retainDays": 30,
+  "statsAllowIps": [
+    "127.0.0.1",
+    "::1"
+  ]
+}

@@ -1,0 +1,15 @@
+.runtime/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+.DS_Store
+data/
+backup/
+*.db
+*.db-wal
+*.db-shm
+
+# 本地私有配置（含内网 host / 白名单 IP），勿提交
+config/logs.json
+config/access.json

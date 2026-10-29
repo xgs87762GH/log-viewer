@@ -1,0 +1,25 @@
+{
+  "baseUrl": "https://logindex.example.com",
+  "logFile": {
+    "preset": "app-level-date-idx"
+  },
+  "environments": {
+    "DEV": {
+      "label": "开发环境",
+      "icon": "🔧",
+      "services": [
+        {
+          "module": "示例服务",
+          "host": "127.0.0.1",
+          "app": "demo-app",
+          "levels": ["INFO", "WARN", "ERROR", "DEBUG", "TRACE"]
+        }
+      ]
+    },
+    "TEST": {
+      "label": "测试环境",
+      "icon": "🧪",
+      "services": []
+    }
+  }
+}
