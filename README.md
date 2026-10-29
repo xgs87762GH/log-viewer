@@ -50,13 +50,14 @@ copy config\access.json.example config\access.json
 按本单位点编辑 `config/logs.json`（`baseUrl`、环境、`host` / `app` / `module`）。  
 按需编辑 `config/access.json` 中的 `statsAllowIps`。
 
-可选：用环境变量提供代理 Basic Auth（无内置默认账号）：
+代理 Basic Auth（无内置默认账号）——推荐用项目根目录 `.env`：
 
 ```bash
-set LOG_VIEWER_USER=your_user
-set LOG_VIEWER_PASS=your_pass
-# 或: LOGINDEX_USER / LOGINDEX_PASS
+copy .env.example .env
+# 编辑 .env，填写 LOG_VIEWER_USER / LOG_VIEWER_PASS
 ```
+
+也可用进程环境变量（会覆盖 `.env` 同名项），或启动时 `--user` / `--password`。说明见 [`.env.example`](.env.example)。
 
 ### 2. 构建并启动（单进程）
 

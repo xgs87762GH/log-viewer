@@ -13,6 +13,11 @@ import webbrowser
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+
+from envfile import load_env  # noqa: E402
+
+load_env(HERE / ".env")
+
 RUNTIME = HERE / ".runtime"
 PID_FILE = RUNTIME / "pids.json"
 SERVER_LOG = RUNTIME / "server.log"

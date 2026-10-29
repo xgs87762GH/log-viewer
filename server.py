@@ -10,8 +10,12 @@ import argparse
 import base64
 import socketserver
 import access_store
+from envfile import load_env
 
-# 凭据：环境变量优先，其次 CLI --user/--password；无默认账号
+HERE = os.path.dirname(os.path.abspath(__file__))
+load_env(os.path.join(HERE, '.env'))
+
+# 凭据：进程环境 / .env，其次 CLI --user/--password；无内置默认账号
 DEFAULT_USER = (
     os.environ.get('LOG_VIEWER_USER')
     or os.environ.get('LOGINDEX_USER')
@@ -22,7 +26,6 @@ DEFAULT_PASS = (
     or os.environ.get('LOGINDEX_PASS')
     or ''
 )
-HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.join(HERE, 'config')
 DIST_DIR = os.path.join(HERE, 'frontend', 'dist')
 _PROXY_CHUNK = 64 * 1024

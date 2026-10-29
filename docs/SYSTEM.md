@@ -74,7 +74,7 @@ log-viewer/
     └── styles/global.css
 ```
 
-Proxy Basic Auth：`LOG_VIEWER_USER` / `LOG_VIEWER_PASS`（或 `LOGINDEX_*`）优先于 CLI；无内置默认账号。
+Proxy Basic Auth：根目录 `.env`（见 `.env.example`）或环境变量 `LOG_VIEWER_USER` / `LOG_VIEWER_PASS`（或 `LOGINDEX_*`）；CLI `--user`/`--password` 可覆盖。无内置默认账号。`.env` 已 gitignore。
 
 ## Navigation (UI) — 三栏
 
