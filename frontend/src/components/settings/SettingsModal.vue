@@ -87,7 +87,7 @@
           </el-form-item>
           <el-form-item label="自动换行">
             <el-switch v-model="draft.behavior.wordWrap" />
-            <span class="hint">开启亦走虚拟滚动；超大日志仍建议适当降低「最大行数」。关闭后超长行省略号截断</span>
+            <span class="hint">开启亦走虚拟滚动；超大日志仍建议适当降低「最大行数」。关闭后超长行可横向滚动查看</span>
           </el-form-item>
           <el-form-item label="超行折叠">
             <el-switch v-model="draft.behavior.foldOverLimit" />
@@ -101,7 +101,7 @@
               :step="1"
               controls-position="right"
             />
-            <span class="unit">行（单条物理行数 &gt; N 才折）</span>
+            <span class="unit">行（单条预览超过 N 行才折）</span>
           </el-form-item>
           <el-form-item label="最大行数">
             <el-input-number

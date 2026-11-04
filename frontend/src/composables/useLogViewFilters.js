@@ -1,21 +1,25 @@
 import { ref, computed } from 'vue'
 import { matchBlobFilters } from '../utils/logFilterMatch'
+import {
+  FILTER_HISTORY_MAX,
+  loadFilterHistory,
+  saveFilterHistory,
+  upsertFilterHistory,
+} from '../utils/filterHistory'
 
 export { matchBlobFilters }
 
 /**
  * LogViewer 正文筛选状态（模块单例）
- * 避免切仪表盘 / 统计卸载 LogViewer 后筛选被重置。
- *
- * 文本过滤参考 Grafana Explore 行过滤：
- *   include — 必须包含（多条件 AND）
- *   exclude — 不得包含（任一命中即剔除）
- *
- * 级别已由日志文件维度区分，此处不再做 INFO/WARN/… 二次过滤。
+ * 文本过滤参考 Grafana Explore：include AND / exclude OR。
+ * 历史：条件集快照，去重后保留最近 N 条（localStorage）。
  */
 
 /** @type {import('vue').Ref<Array<{ id: string, text: string, mode: 'include'|'exclude' }>>} */
 const textFilters = ref([])
+
+/** @type {import('vue').Ref<Array<{ id: string, sig: string, filters: Array, label: string, at: number }>>} */
+const filterHistory = ref(loadFilterHistory())
 
 let seq = 0
 function nextId() {
@@ -31,8 +35,7 @@ const excludeTerms = computed(() =>
 )
 
 /**
- * 解析输入：以 - 开头（且后面还有内容）→ 排除；否则包含。
- * 支持引号包裹：-"health check" / "order id"
+ * 解析输入：-关键字 → 排除；"..." 去引号。
  */
 function parseFilterInput(raw) {
   const s = String(raw ?? '').trim()
@@ -54,6 +57,16 @@ function parseFilterInput(raw) {
   return { mode, text: body }
 }
 
+function rememberCurrentFilters() {
+  if (!textFilters.value.length) return
+  filterHistory.value = upsertFilterHistory(
+    filterHistory.value,
+    textFilters.value,
+    { max: FILTER_HISTORY_MAX },
+  )
+  saveFilterHistory(filterHistory.value)
+}
+
 function addTextFilter(raw, forceMode) {
   const parsed = parseFilterInput(raw)
   if (!parsed) return false
@@ -64,28 +77,86 @@ function addTextFilter(raw, forceMode) {
   )
   if (exists) return false
   textFilters.value = [...textFilters.value, { id: nextId(), text, mode }]
+  rememberCurrentFilters()
+  return true
+}
+
+/**
+ * 就地改芯片：改文案 / 模式。文案冲突时返回 false。
+ */
+function updateTextFilter(id, patch = {}) {
+  const idx = textFilters.value.findIndex((f) => f.id === id)
+  if (idx < 0) return false
+  const cur = textFilters.value[idx]
+  let text = cur.text
+  let mode = cur.mode
+  if (patch.text != null) {
+    const parsed = parseFilterInput(patch.text)
+    if (!parsed) return false
+    text = parsed.text
+    if (patch.mode == null && String(patch.text).trim().startsWith('-')) {
+      mode = parsed.mode
+    }
+  }
+  if (patch.mode === 'include' || patch.mode === 'exclude') mode = patch.mode
+  const clash = textFilters.value.some(
+    (f) => f.id !== id && f.mode === mode && f.text.toLowerCase() === text.toLowerCase(),
+  )
+  if (clash) return false
+  const next = textFilters.value.slice()
+  next[idx] = { ...cur, text, mode }
+  textFilters.value = next
+  rememberCurrentFilters()
   return true
 }
 
 function removeTextFilter(id) {
-  textFilters.value = textFilters.value.filter((f) => f.id !== id)
+  const next = textFilters.value.filter((f) => f.id !== id)
+  if (next.length === textFilters.value.length) return
+  textFilters.value = next
+  if (next.length) rememberCurrentFilters()
 }
 
 function clearTextFilters() {
   textFilters.value = []
 }
 
+function setTextFilters(list, { recordHistory = true } = {}) {
+  const next = []
+  const seen = new Set()
+  for (const f of list || []) {
+    const text = String(f?.text ?? '').trim()
+    if (!text) continue
+    const mode = f?.mode === 'exclude' ? 'exclude' : 'include'
+    const key = `${mode}:${text.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    next.push({ id: nextId(), text, mode })
+  }
+  textFilters.value = next
+  if (recordHistory && next.length) rememberCurrentFilters()
+}
+
 function toggleFilterMode(id) {
-  textFilters.value = textFilters.value.map((f) => {
-    if (f.id !== id) return f
-    return { ...f, mode: f.mode === 'include' ? 'exclude' : 'include' }
+  const cur = textFilters.value.find((f) => f.id === id)
+  if (!cur) return false
+  return updateTextFilter(id, {
+    mode: cur.mode === 'exclude' ? 'include' : 'exclude',
   })
 }
 
-/**
- * 整条日志（主行+续行）是否通过文本过滤。
- * @param {string} blob 已拼接的正文
- */
+function applyHistory(id) {
+  const hit = filterHistory.value.find((h) => h.id === id)
+  if (!hit) return false
+  setTextFilters(hit.filters, { recordHistory: true })
+  return true
+}
+
+function clearFilterHistory() {
+  filterHistory.value = []
+  saveFilterHistory([])
+}
+
 function matchTextFilters(blob) {
   return matchBlobFilters(blob, includeTerms.value, excludeTerms.value)
 }
@@ -95,10 +166,15 @@ export function useLogViewFilters() {
     textFilters,
     includeTerms,
     excludeTerms,
+    filterHistory,
     addTextFilter,
+    updateTextFilter,
     removeTextFilter,
     clearTextFilters,
+    setTextFilters,
     toggleFilterMode,
+    applyHistory,
+    clearFilterHistory,
     parseFilterInput,
     matchTextFilters,
     matchBlobFilters,

@@ -73,6 +73,9 @@ body {
   color: var(--log-fg);
   border-left: 3px solid transparent;
   box-sizing: border-box;
+  /* 未换行时行宽随正文撑开，由 .log-wrap 横向滚动查看长 SQL */
+  width: max-content;
+  min-width: 100%;
 }
 /* 悬停只高亮，绝不撑开行高 / 自动换行展开 */
 .ln:hover {
@@ -89,18 +92,19 @@ body {
   font-size: 11px;
 }
 .ln .tx {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
   padding-right: 16px;
   white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: unset;
   font-family: var(--font-log);
   color: inherit;
 }
 
 .ln.wrap {
   /* 高度由虚拟列表行内联 style 给出，与 visualLines 估算一致 */
+  width: 100%;
   height: auto;
   min-height: var(--row-h, 22px);
   line-height: var(--lh-log);
@@ -109,12 +113,34 @@ body {
   align-items: flex-start;
 }
 .ln.wrap .tx {
+  flex: 1 1 auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   overflow: visible;
   text-overflow: unset;
 }
 .ln.wrap:hover { background: color-mix(in srgb, var(--ac) 6%, transparent) }
+
+/* 文章式折叠预览：限高裁切 + 底部淡出 */
+.ln.clipped {
+  position: relative;
+  overflow: hidden;
+}
+.ln.clipped::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 55%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--log-bg) 92%, transparent)
+  );
+}
 
 /* 级别：左边条为主，正文保持中性色；未识别级别也正常显示 */
 .ln-I { border-left-color: var(--info) }

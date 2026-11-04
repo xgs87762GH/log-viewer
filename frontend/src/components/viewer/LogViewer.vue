@@ -97,7 +97,12 @@
             <el-button type="primary" size="small" @click="clearFilters">清空过滤</el-button>
           </el-empty>
         </div>
-        <div v-else class="v-viewport" :style="{ height: totalHeight + 'px' }">
+        <div
+          v-else
+          class="v-viewport"
+          :class="{ 'no-wrap': !wordWrap }"
+          :style="{ height: totalHeight + 'px' }"
+        >
           <div class="v-content" :style="{ transform: `translateY(${offsetY}px)` }">
             <div
               v-for="row in renderedRows"
@@ -105,35 +110,15 @@
               :class="rowClass(row)"
               :style="{ height: row.pxH + 'px' }"
             >
-              <template v-if="row.kind === 'fold'">
-                <span class="no"></span>
-                <span class="tx fold-ctrl">
-                  已折叠本条剩余 {{ row.remain }} 行
-                  <button
-                    type="button"
-                    class="fold-btn"
-                    :aria-label="'展开折叠的日志条目'"
-                    @click="expandEntry(row.entryId)"
-                  >展开</button>
-                </span>
-              </template>
+              <LogFoldBar
+                v-if="row.kind === 'fold'"
+                :expanded="!!row.expanded"
+                :remain="row.remain || 0"
+                @toggle="row.expanded ? collapseEntry(row.entryId) : expandEntry(row.entryId)"
+              />
               <template v-else>
                 <span class="no">{{ row.no }}</span>
                 <span class="tx" v-html="row.html"></span>
-                <button
-                  v-if="row.canExpand"
-                  type="button"
-                  class="fold-btn inline"
-                  aria-label="展开本条日志"
-                  @click="expandEntry(row.entryId)"
-                >展开</button>
-                <button
-                  v-else-if="row.canCollapse"
-                  type="button"
-                  class="fold-btn inline"
-                  aria-label="折叠本条日志"
-                  @click="collapseEntry(row.entryId)"
-                >折叠</button>
               </template>
             </div>
           </div>
@@ -156,7 +141,7 @@
 <script setup>
 /**
  * LogViewer —— 日志预览
- * 折叠语义：针对「单条日志」（主行 + 续行/堆栈），超过阈值才折叠该条。
+ * 折叠语义：单条日志视觉行数超阈值则文章式折叠（限高裁切，不改正文）。
  * 渲染：可变行高虚拟列表（换行开/关统一路径），仅窗口内高亮。
  */
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
@@ -167,15 +152,12 @@ import { useToast } from '../../composables/useToast'
 import { useLogViewFilters } from '../../composables/useLogViewFilters'
 import { FALLBACK_LEVEL_ORDER } from '../../constants/logLevels'
 import { highlightLine } from '../../utils/logParser'
-import {
-  buildRowLayout,
-  estimateWrapCols,
-  findStartIndex,
-  findEndIndex,
-} from '../../utils/logViewRows'
+import { estimateWrapCols, baseRowHeight, readLogFontMetrics } from '../../utils/logTextMetrics'
+import { buildRowLayout, findStartIndex, findEndIndex } from '../../utils/logVirtualLayout'
 import { processLogAsync, processLogSync } from '../../utils/logProcessClient'
 import { Loading } from '@element-plus/icons-vue'
 import LogFilterBar from './LogFilterBar.vue'
+import LogFoldBar from './LogFoldBar.vue'
 
 const logs = useLogs()
 const settings = useSettings()
@@ -292,28 +274,22 @@ function refreshIndexHint() {
     : `上次刷新 ${when}（打开将检测）`
 }
 
-function readBaseRowH() {
-  const root = getComputedStyle(document.documentElement)
-  const fs = parseFloat(root.getPropertyValue('--fs-log')) || 13
-  const lhRaw = root.getPropertyValue('--lh-log').trim()
-  const lh = parseFloat(lhRaw) || 1.65
-  if (wordWrap.value) {
-    return Math.max(18, Math.round(fs * lh))
-  }
-  return Math.max(18, Math.round(fs * 1.7))
-}
-
 function refreshWrapCols() {
   const el = logWrapRef.value
   if (!el) return
-  wrapCols.value = estimateWrapCols(el.clientWidth)
-  baseRowH.value = readBaseRowH()
+  const { fontSize, lineHeight } = readLogFontMetrics()
+  wrapCols.value = estimateWrapCols(el.clientWidth, { fontSize })
+  baseRowH.value = baseRowHeight({
+    fontSize,
+    lineHeight,
+    wordWrap: wordWrap.value,
+  })
   document.documentElement.style.setProperty('--row-h', baseRowH.value + 'px')
 }
 
 function paintRow(row, kw, pxH) {
   if (row.kind === 'fold') return { ...row, pxH }
-  const show = row.truncated ? row.text + '…' : row.text
+  const show = row.text
   const kwKey = Array.isArray(kw) ? kw.join('\0') : ''
   const cacheKey = row.key + '|' + kwKey
   let html = hlCache.get(cacheKey)
@@ -338,8 +314,13 @@ const renderedRows = computed(() => {
 })
 
 function rowClass(row) {
-  if (row.kind === 'fold') return ['ln', 'ln-fold', wordWrap.value ? 'wrap' : '']
-  return ['ln', row.abbr ? 'ln-' + row.abbr : '', wordWrap.value ? 'wrap' : '']
+  if (row.kind === 'fold') return ['ln', 'ln-fold']
+  return [
+    'ln',
+    row.abbr ? 'ln-' + row.abbr : '',
+    wordWrap.value ? 'wrap' : '',
+    row.clipped ? 'clipped' : '',
+  ]
 }
 
 function expandEntry(id) {
@@ -705,7 +686,7 @@ function copyFiltered() {
   const parts = []
   for (const row of viewRows.value) {
     if (row.kind === 'fold') continue
-    parts.push(row.truncated ? row.text + '…' : row.text)
+    parts.push(row.text)
   }
   writeClipboard(parts.join('\n'), '已复制过滤结果')
 }
@@ -884,25 +865,20 @@ onUnmounted(() => {
 .tip-err { padding: 40px 16px }
 
 .v-viewport { position: relative; width: 100% }
+.v-viewport.no-wrap { width: max-content; min-width: 100% }
 .v-content { position: absolute; top: 0; left: 0; width: 100% }
+.v-viewport.no-wrap .v-content { width: max-content; min-width: 100% }
 
 .ln-fold {
-  border-left-color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  display: flex;
+  width: 100% !important;
+  min-width: 100%;
+  border-left-color: transparent;
+  background: transparent !important;
+  padding: 2px 0;
+  overflow: visible;
 }
-.fold-ctrl { color: var(--warn) !important; font-size: 12px }
-.fold-btn {
-  margin-left: 8px;
-  border: none;
-  background: transparent;
-  color: var(--el-color-primary);
-  cursor: pointer;
-  font-size: 12px;
-  font-family: inherit;
-  padding: 0;
-}
-.fold-btn:hover { text-decoration: underline }
-.fold-btn.inline { flex-shrink: 0 }
+.ln-fold:hover { background: transparent !important; }
 
 .status {
   padding: 6px 16px;

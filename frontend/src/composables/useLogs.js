@@ -79,21 +79,49 @@ function guessActiveFileName(host, app, level, envKey) {
   return formatActiveName(app, level, getLogFileRule(host, app, envKey))
 }
 
-function buildLogUrl(host, app, level, filename) {
-  const base = String(state.config?.baseUrl || '').replace(/\/$/, '')
+/** 定位服务项（用于 baseUrl / urlStyle 等覆盖） */
+function findService(host, app, envKey) {
+  const cfg = state.config || {}
+  const envs = cfg.environments || {}
+  if (envKey && envs[envKey]) {
+    return (envs[envKey].services || []).find((s) => s.host === host && s.app === app) || null
+  }
+  for (const env of Object.values(envs)) {
+    const hit = (env.services || []).find((s) => s.host === host && s.app === app)
+    if (hit) return hit
+  }
+  return null
+}
+
+/**
+ * 解析服务最终 baseUrl。
+ * urlStyle: "host-app"（默认）→ {base}/{host}/{app}/
+ *           "app"            → {base}/{app}/  （如独立 :5900 容器日志根）
+ */
+function resolveServiceUrlParts(host, app, envKey) {
+  const svc = findService(host, app, envKey)
+  const base = String(svc?.baseUrl || state.config?.baseUrl || '').replace(/\/$/, '')
+  const style = svc?.urlStyle === 'app' ? 'app' : 'host-app'
+  const prefix =
+    style === 'app'
+      ? (base ? `${base}/${app}` : `/${app}`)
+      : (base ? `${base}/${host}/${app}` : `/${host}/${app}`)
+  return { base, style, prefix, svc }
+}
+
+function buildLogUrl(host, app, level, filename, envKey) {
+  const { prefix } = resolveServiceUrlParts(host, app, envKey)
   const key = moduleKey(host, app)
   const name =
     filename ||
     state.levelsCache[key]?.files?.[level] ||
-    guessActiveFileName(host, app, level)
-  if (!base) return `/${host}/${app}/${name}`
-  return `${base}/${host}/${app}/${name}`
+    guessActiveFileName(host, app, level, envKey)
+  return `${prefix}/${name}`
 }
 
-function buildDirUrl(host, app) {
-  const base = String(state.config?.baseUrl || '').replace(/\/$/, '')
-  if (!base) return `/${host}/${app}/`
-  return `${base}/${host}/${app}/`
+function buildDirUrl(host, app, envKey) {
+  const { prefix } = resolveServiceUrlParts(host, app, envKey)
+  return `${prefix}/`
 }
 
 function hydrateFromStore(key, rule) {
