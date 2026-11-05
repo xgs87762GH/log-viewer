@@ -50,7 +50,7 @@ Vite 开发代理会把真实客户端 IP 写入 `X-Forwarded-For`。
 | `AccessStats.vue` | 统计页 UI |
 | L1 `view: 'stats'` | NavViewSwitch 第三项「统计」 |
 
-埋点：打开仪表盘 / 统计、切换环境、打开日志、复制链接。
+埋点：打开仪表盘 / 统计、切换环境、打开日志、复制链接、下载日志、查看日志上下文。
 
 ## 隐私
 

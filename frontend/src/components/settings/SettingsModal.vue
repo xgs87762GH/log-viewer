@@ -123,12 +123,42 @@
             />
             <span class="unit">MB</span>
           </el-form-item>
+          <el-form-item label="上下文初始">
+            <el-input-number
+              v-model="draft.behavior.contextInitialLines"
+              :min="CONTEXT_LIMITS.initialLines.min"
+              :max="CONTEXT_LIMITS.initialLines.max"
+              :step="1"
+              controls-position="right"
+            />
+            <span class="unit">行（中心行前后各取）</span>
+          </el-form-item>
+          <el-form-item label="懒加载步长">
+            <el-input-number
+              v-model="draft.behavior.contextLazyStep"
+              :min="CONTEXT_LIMITS.lazyStep.min"
+              :max="CONTEXT_LIMITS.lazyStep.max"
+              :step="1"
+              controls-position="right"
+            />
+            <span class="unit">行 / 次（滚到头时追加）</span>
+          </el-form-item>
+          <el-form-item label="单侧上限">
+            <el-input-number
+              v-model="draft.behavior.contextMaxLines"
+              :min="CONTEXT_LIMITS.maxLinesPerSide.min"
+              :max="CONTEXT_LIMITS.maxLinesPerSide.max"
+              :step="5"
+              controls-position="right"
+            />
+            <span class="unit">行（前后各计）</span>
+          </el-form-item>
         </el-form>
         <el-alert
           type="error"
           :closable="false"
           show-icon
-          title="点「完成」后才会写入并按新的「最大行数 / 尾部下载」重新拉取当前日志。"
+          title="点「完成」后才会写入；只有「最大行数 / 尾部下载」变化才重新拉取当前日志，上下文参数仅影响弹窗。"
           class="mb"
         />
         <el-alert
@@ -155,6 +185,7 @@
  */
 import { reactive, watch } from 'vue'
 import { useSettings } from '../../composables/useSettings'
+import { CONTEXT_LIMITS, clampContextConfig } from '../../constants/logContextConfig'
 
 const settings = useSettings()
 
@@ -204,6 +235,14 @@ function clampBehavior() {
   b.maxLines = Math.min(100000, Math.max(1000, Number(b.maxLines) || 10000))
   b.tailMB = Math.min(100, Math.max(1, Math.round(Number(b.tailMB) || 10)))
   b.foldMaxLines = Math.min(50000, Math.max(1, Number(b.foldMaxLines) || 5))
+  const ctx = clampContextConfig({
+    initialLines: b.contextInitialLines,
+    lazyStep: b.contextLazyStep,
+    maxLinesPerSide: b.contextMaxLines,
+  })
+  b.contextInitialLines = ctx.initialLines
+  b.contextLazyStep = ctx.lazyStep
+  b.contextMaxLines = ctx.maxLinesPerSide
 }
 
 function onConfirm() {

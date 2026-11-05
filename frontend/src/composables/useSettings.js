@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { THEMES, LOG_PALETTES } from '../constants/themes'
+import { CONTEXT_CONFIG, clampContextConfig } from '../constants/logContextConfig'
 import { mixHex, withAlpha } from '../utils/color'
 
 /**
@@ -27,6 +28,10 @@ const DEFAULTS = {
     foldOverLimit: true,
     /** 开启折叠时：单条日志视觉行数超过该值才折叠；折叠为限高预览，正文不截断 */
     foldMaxLines: 5,
+    /** 上下文弹窗：初始前后行数 / 每次懒加载步长 / 单侧累计上限 */
+    contextInitialLines: CONTEXT_CONFIG.initialLines,
+    contextLazyStep: CONTEXT_CONFIG.lazyStep,
+    contextMaxLines: CONTEXT_CONFIG.maxLinesPerSide,
   },
 }
 
@@ -232,10 +237,20 @@ function commit(snap) {
   notifyCommit({ needsReload })
 }
 
+/** 上下文弹窗统一读取（旧 localStorage 快照缺字段时由 clamp 兜底） */
+function getContextConfig() {
+  const b = cfg.behavior || {}
+  return clampContextConfig({
+    initialLines: b.contextInitialLines,
+    lazyStep: b.contextLazyStep,
+    maxLinesPerSide: b.contextMaxLines,
+  })
+}
+
 const instance = {
   cfg, state, THEMES, DEFAULTS,
   load, save, apply, setTheme, setColor, setFont, setSize, setBehavior, getFetchLimits,
-  commit, onCommit, reset, open, close,
+  getContextConfig, commit, onCommit, reset, open, close,
 }
 
 export function useSettings() {

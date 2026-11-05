@@ -197,3 +197,70 @@ body {
   font-weight: 700;
   box-shadow: 0 0 0 1px color-mix(in srgb, #f0c000 55%, transparent);
 }
+
+/* ══ 行上下文操作项：hover 出现，绝对定位，绝不撑开行高 ══ */
+.ln { position: relative }
+.ln-ctx-btn {
+  position: absolute;
+  right: 4px;
+  top: 0;
+  z-index: 2;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: var(--row-h, 22px);
+  padding: 0;
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+  background: var(--s2);
+  color: var(--t2);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ln:hover .ln-ctx-btn { display: flex }
+.ln-ctx-btn:hover { color: var(--ac); border-color: var(--ac) }
+
+/* ══ 上下文弹窗：v-html 着色依赖 .ln 后代选择器，样式必须全局 ══ */
+.ctx-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--t2);
+}
+.ctx-hint { margin-left: auto; color: var(--t3) }
+.ctx-body {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 6px 0;
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+  background: var(--log-bg);
+}
+.ctx-edge { padding: 4px 8px; text-align: center; font-size: 12px; color: var(--t3) }
+.ctx-row {
+  width: 100%;
+  height: auto;
+  min-height: var(--row-h, 22px);
+  line-height: var(--row-h, 22px);
+  align-items: flex-start;
+}
+.ctx-row .no { position: sticky; left: 0; z-index: 1; background: var(--log-bg) }
+.ctx-row .tx {
+  flex: 1 1 auto;
+  padding-right: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow: visible;
+}
+.ctx-row-before, .ctx-row-after { opacity: 0.72 }
+.ctx-row-focus {
+  opacity: 1;
+  border-left-color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 16%, transparent);
+}

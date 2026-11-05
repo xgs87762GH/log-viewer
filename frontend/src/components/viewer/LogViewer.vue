@@ -109,6 +109,7 @@
               :key="row.key"
               :class="rowClass(row)"
               :style="{ height: row.pxH + 'px' }"
+              @click="onRowClick(row, $event)"
             >
               <LogFoldBar
                 v-if="row.kind === 'fold'"
@@ -119,6 +120,13 @@
               <template v-else>
                 <span class="no">{{ row.no }}</span>
                 <span class="tx" v-html="row.html"></span>
+                <button
+                  class="ln-ctx-btn"
+                  type="button"
+                  title="查看上下文"
+                  aria-label="查看上下文"
+                  @click.stop="openContext(row)"
+                >⋯</button>
               </template>
             </div>
           </div>
@@ -134,6 +142,15 @@
         <el-text size="small" type="info">文件: {{ fmtSize(size) }}</el-text>
         <el-text size="small" type="info">更新: {{ updateTime }}</el-text>
       </div>
+
+      <LogContextDialog
+        v-model="context.open"
+        :lines="lines"
+        :center-idx="context.centerIdx"
+        :include-terms="includeTerms"
+        :config="contextConfig"
+        :meta="context.meta"
+      />
     </template>
   </div>
 </template>
@@ -158,6 +175,7 @@ import { processLogAsync, processLogSync } from '../../utils/logProcessClient'
 import { Loading } from '@element-plus/icons-vue'
 import LogFilterBar from './LogFilterBar.vue'
 import LogFoldBar from './LogFoldBar.vue'
+import LogContextDialog from './LogContextDialog.vue'
 
 const logs = useLogs()
 const settings = useSettings()
@@ -201,6 +219,10 @@ const expandedIds = ref(new Set())
 
 const viewRows = ref([])
 const filteredRowCount = ref(0)
+
+/** 上下文锚点是原始行下标，与过滤后的 viewRows 完全解耦 */
+const context = ref({ open: false, centerIdx: 0, meta: {} })
+const contextConfig = computed(() => settings.getContextConfig())
 
 let loadSeq = 0
 let processSeq = 0
@@ -337,6 +359,29 @@ function collapseEntry(id) {
 
 function clearFilters() {
   clearTextFilters()
+}
+
+function openContext(row) {
+  if (row.kind === 'fold' || !lines.value.length) return
+  context.value = {
+    open: true,
+    centerIdx: row.idx,
+    meta: {
+      file: selectedFile.value || '',
+      level: nav.selectedLevel,
+      env: nav.env,
+      module: nav.currentService?.module || '',
+    },
+  }
+}
+
+function onRowClick(row, ev) {
+  if (row.kind === 'fold') return
+  // 选中文本时保留复制能力，不弹窗；操作按钮自身用 .stop 直接打开
+  const sel = typeof window !== 'undefined' ? window.getSelection?.() : null
+  if (sel && String(sel).length > 0) return
+  if (ev?.target?.closest?.('button, a')) return
+  openContext(row)
 }
 
 function safeHighlight(line, level, kw) {
