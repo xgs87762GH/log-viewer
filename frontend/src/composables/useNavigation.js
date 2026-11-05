@@ -13,7 +13,7 @@ import { useAccessLog } from './useAccessLog'
 
 const L1_KEY = 'log_viewer_nav_l1_collapsed'
 const L2_KEY = 'log_viewer_nav_l2_collapsed'
-const VIEWS = new Set(['dashboard', 'viewer', 'stats'])
+const VIEWS = new Set(['dashboard', 'viewer', 'stats', 'settings'])
 
 const state = reactive({
   view: 'dashboard',

@@ -13,11 +13,6 @@
     </div>
 
     <footer class="ft">
-      <el-tooltip content="设置" placement="right" :show-after="400">
-        <button type="button" class="ui-icon-btn" aria-label="设置" @click="settings.open()">
-          <el-icon><Setting /></el-icon>
-        </button>
-      </el-tooltip>
       <el-tooltip
         :content="nav.navL1Collapsed ? '展开一级导航' : '缩小一级导航'"
         placement="right"
@@ -42,13 +37,11 @@
  * 收起不做 width 过渡，避免右侧日志区连续 reflow 卡顿。
  */
 import { onMounted } from 'vue'
-import { Setting, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
-import { useSettings } from '../../composables/useSettings'
+import { DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useNavigation } from '../../composables/useNavigation'
 import { APP_VERSION } from '../../constants/version'
 import NavViewSwitch from './NavViewSwitch.vue'
 
-const settings = useSettings()
 const nav = useNavigation()
 
 /** 窄屏首屏默认收起导航，拓宽主内容区（仅首次，不覆盖用户之后的手动展开） */

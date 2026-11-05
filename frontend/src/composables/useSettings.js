@@ -48,7 +48,6 @@ function deepMerge(base, ext) {
 }
 
 const cfg = reactive(JSON.parse(JSON.stringify(DEFAULTS)))
-const state = reactive({ visible: false })
 
 function load() {
   try {
@@ -182,30 +181,6 @@ function apply() {
   root.dataset.theme = themeKey
 }
 
-function setTheme(name) {
-  if (THEMES[name]) {
-    Object.assign(cfg.colors, JSON.parse(JSON.stringify(THEMES[name].colors)))
-    cfg.theme = name
-    apply(); save()
-  }
-}
-
-function setColor(key, value) {
-  cfg.colors[key] = value
-  cfg.theme = 'custom'
-  apply(); save()
-}
-
-function setFont(key, value) {
-  cfg.fonts[key] = value
-  apply(); save()
-}
-
-function setSize(key, value) {
-  cfg.sizes[key] = value
-  apply(); save()
-}
-
 function setBehavior(key, value) {
   cfg.behavior[key] = value
   save()
@@ -229,14 +204,6 @@ function reset() {
       prevLimits.maxLines !== nextLimits.maxLines ||
       prevLimits.tailMB !== nextLimits.tailMB,
   })
-}
-
-function open() {
-  state.visible = true
-}
-
-function close() {
-  state.visible = false
 }
 
 const commitListeners = new Set()
@@ -280,9 +247,9 @@ function getContextConfig() {
 }
 
 const instance = {
-  cfg, state, THEMES, DEFAULTS,
-  load, save, apply, setTheme, setColor, setFont, setSize, setBehavior, getFetchLimits,
-  getContextConfig, commit, onCommit, reset, open, close,
+  cfg, THEMES, DEFAULTS,
+  load, save, apply, setBehavior, getFetchLimits,
+  getContextConfig, commit, onCommit, reset,
 }
 
 export function useSettings() {

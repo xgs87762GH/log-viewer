@@ -30,6 +30,16 @@
       <el-icon :size="18"><DataAnalysis /></el-icon>
       <span v-show="!collapsed" class="label">统计</span>
     </button>
+    <button
+      type="button"
+      class="item"
+      :class="{ on: nav.view === 'settings' }"
+      :title="collapsed ? '设置' : undefined"
+      @click="nav.setView('settings')"
+    >
+      <el-icon :size="18"><Setting /></el-icon>
+      <span v-show="!collapsed" class="label">设置</span>
+    </button>
   </nav>
 </template>
 
@@ -37,7 +47,7 @@
 /**
  * NavViewSwitch —— 轻量 L1（不用 ElMenu collapse，避免额外布局抖动）
  */
-import { Grid, Document, DataAnalysis } from '@element-plus/icons-vue'
+import { Grid, Document, DataAnalysis, Setting } from '@element-plus/icons-vue'
 import { useNavigation } from '../../composables/useNavigation'
 
 defineProps({

@@ -10,7 +10,6 @@
         <component :is="viewComp" :key="nav.view" />
       </keep-alive>
     </main>
-    <SettingsModal />
   </div>
 </template>
 
@@ -31,7 +30,7 @@ import NavSecondary from './components/nav/NavSecondary.vue'
 const Dashboard = defineAsyncComponent(() => import('./components/dashboard/Dashboard.vue'))
 const AccessStats = defineAsyncComponent(() => import('./components/stats/AccessStats.vue'))
 const LogViewer = defineAsyncComponent(() => import('./components/viewer/LogViewer.vue'))
-const SettingsModal = defineAsyncComponent(() => import('./components/settings/SettingsModal.vue'))
+const SettingsPage = defineAsyncComponent(() => import('./components/settings/SettingsPage.vue'))
 
 const logs = useLogs()
 const settings = useSettings()
@@ -40,6 +39,7 @@ const nav = useNavigation()
 const viewComp = computed(() => {
   if (nav.view === 'dashboard') return Dashboard
   if (nav.view === 'stats') return AccessStats
+  if (nav.view === 'settings') return SettingsPage
   return LogViewer
 })
 
