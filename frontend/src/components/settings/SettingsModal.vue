@@ -299,33 +299,69 @@ const sizeOptions = {
 </script>
 
 <style scoped>
-.sec { margin-bottom: 20px }
-.sec h3 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--t1) }
-.theme-grid { display: flex; gap: 8px }
-.theme-card {
-  flex: 1;
-  padding: 10px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  border: 2px solid var(--bd);
-  transition: .15s;
+.sec { margin-bottom: 22px; padding-bottom: 20px; border-bottom: 1px solid var(--bd) }
+.sec:last-of-type { border-bottom: none; padding-bottom: 0; margin-bottom: 8px }
+.sec h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0 0 12px;
+  color: var(--t1);
 }
-.theme-card.on { border-color: var(--el-color-primary) }
-.theme-card:hover { border-color: var(--bd2) }
-.colors { display: flex; gap: 3px; margin-top: 6px }
-.colors span { width: 16px; height: 16px; border-radius: 3px; display: inline-block }
+.sec h3::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--grad-accent);
+}
+.theme-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px }
+.theme-card {
+  padding: 12px;
+  border-radius: var(--r);
+  cursor: pointer;
+  border: 1px solid var(--bd);
+  background: var(--grad-surface), var(--s2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t2);
+  transition: all var(--dur) var(--ease);
+}
+.theme-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sh-1);
+  border-color: var(--bd2);
+  color: var(--t1);
+}
+.theme-card.on {
+  border-color: var(--ac);
+  color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 10%, var(--s2));
+  box-shadow: 0 0 0 3px var(--ring);
+}
+.colors { display: flex; gap: 4px; margin-top: 10px }
+.colors span {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  display: inline-block;
+  box-shadow: inset 0 1px 0 var(--hi);
+}
 .color-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 7px 10px;
   background: var(--s2);
-  border-radius: 6px;
+  border: 1px solid var(--bd);
+  border-radius: var(--r-sm);
   margin-bottom: 8px;
 }
-.color-row span { font-size: 12px; color: var(--t2); flex: 1 }
-.color-row code { font-size: 11px; color: var(--t3) }
-.unit { margin-left: 8px; color: var(--t3); font-size: 12px }
-.hint { margin-left: 10px; color: var(--t3); font-size: 12px }
+.color-row span { font-size: var(--fs-sm); color: var(--t2); flex: 1 }
+.color-row code { font-size: var(--fs-xs); color: var(--t3); font-family: var(--font-log) }
+.unit { margin-left: 8px; color: var(--t3); font-size: var(--fs-sm) }
+.hint { margin-left: 10px; color: var(--t3); font-size: var(--fs-sm) }
 .mb { margin-bottom: 8px }
 </style>

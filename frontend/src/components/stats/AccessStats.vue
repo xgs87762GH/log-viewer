@@ -1,83 +1,103 @@
 <template>
   <div class="stats">
-    <div class="hd">
-      <h2>访问统计</h2>
-      <el-text type="info" size="small">本机识别 IP：{{ presence.state.ip || '—' }}</el-text>
+    <section class="stats-hero">
+      <div class="hero-copy">
+        <div class="ui-eyebrow">Access Analytics</div>
+        <h1>访问统计</h1>
+        <p>记录访问 IP 与操作元数据，不记录日志正文；数据每 30 秒自动刷新。</p>
+      </div>
+      <div class="hero-side">
+        <span class="ui-chip"><el-icon><User /></el-icon> 本机 {{ presence.state.ip || '—' }}</span>
+        <el-tooltip content="刷新统计" placement="top" :show-after="400">
+          <button
+            type="button"
+            class="ui-icon-btn"
+            :disabled="!presence.state.canViewStats"
+            aria-label="刷新统计"
+            @click="refresh"
+          ><el-icon><Refresh /></el-icon></button>
+        </el-tooltip>
+      </div>
+    </section>
+
+    <div v-if="!presence.state.canViewStats" class="ui-surface access-denied">
+      <div class="ui-empty-icon"><el-icon><Lock /></el-icon></div>
+      <div class="ui-empty-title">无权查看统计</div>
+      <div class="ui-empty-desc">
+        当前 IP（{{ presence.state.ip || '未知' }}）不在白名单。请在服务器
+        <code>config/access.json</code> 的 <code>statsAllowIps</code> 中添加本机 IP
+        （默认仅允许 127.0.0.1 / ::1）。
+      </div>
     </div>
 
-    <el-alert
-      v-if="!presence.state.canViewStats"
-      type="warning"
-      show-icon
-      :closable="false"
-      title="无权查看统计"
-      :description="`当前 IP（${presence.state.ip || '未知'}）不在白名单。请在服务器 config/access.json 的 statsAllowIps 中添加本机 IP（默认仅允许 127.0.0.1 / ::1）。`"
-      class="mb"
-    />
-
     <template v-else>
-      <el-row :gutter="12" class="mb">
-        <el-col :span="8">
-          <el-card shadow="hover"><div class="metric"><div class="n">{{ summary.onlineCount ?? '—' }}</div><div class="l">当前在线</div></div></el-card>
-        </el-col>
-        <el-col :span="8">
-          <el-card shadow="hover"><div class="metric"><div class="n">{{ summary.events24h ?? '—' }}</div><div class="l">近 24 小时访问</div></div></el-card>
-        </el-col>
-        <el-col :span="8">
-          <el-card shadow="hover"><div class="metric"><div class="n">{{ summary.eventsTotal ?? '—' }}</div><div class="l">累计事件</div></div></el-card>
-        </el-col>
-      </el-row>
+      <section class="kpi-row" aria-label="访问概览">
+        <div class="ui-surface ui-kpi">
+          <div class="ui-kpi-icon"><el-icon><User /></el-icon></div>
+          <div><div class="ui-kpi-value">{{ summary.onlineCount ?? '—' }}</div><div class="ui-kpi-label">当前在线</div></div>
+        </div>
+        <div class="ui-surface ui-kpi">
+          <div class="ui-kpi-icon ui-kpi-icon--info"><el-icon><Histogram /></el-icon></div>
+          <div><div class="ui-kpi-value">{{ summary.events24h ?? '—' }}</div><div class="ui-kpi-label">近 24 小时访问</div></div>
+        </div>
+        <div class="ui-surface ui-kpi">
+          <div class="ui-kpi-icon ui-kpi-icon--trc"><el-icon><DataAnalysis /></el-icon></div>
+          <div><div class="ui-kpi-value">{{ summary.eventsTotal ?? '—' }}</div><div class="ui-kpi-label">累计事件</div></div>
+        </div>
+      </section>
 
-      <el-row :gutter="16">
-        <el-col :xs="24" :md="10">
-          <el-card shadow="never">
-            <template #header>
-              <div class="card-hd">
-                <span>在线会话</span>
-                <el-button size="small" text :loading="loading" @click="refresh">刷新</el-button>
-              </div>
-            </template>
-            <el-table :data="online" size="small" stripe max-height="420" empty-text="暂无在线">
-              <el-table-column prop="ip" label="IP" min-width="120" />
-              <el-table-column label="进入" min-width="100">
-                <template #default="{ row }">{{ fmtTime(row.started_at) }}</template>
-              </el-table-column>
-              <el-table-column label="最近活跃" min-width="100">
-                <template #default="{ row }">{{ fmtTime(row.last_seen) }}</template>
-              </el-table-column>
-            </el-table>
-          </el-card>
-        </el-col>
-        <el-col :xs="24" :md="14">
-          <el-card shadow="never">
-            <template #header>
-              <div class="card-hd">
-                <span>最近访问</span>
-                <el-button size="small" text :loading="loading" @click="refresh">刷新</el-button>
-              </div>
-            </template>
-            <el-table :data="recent" size="small" stripe max-height="420" empty-text="暂无记录">
-              <el-table-column label="时间" width="160">
-                <template #default="{ row }">{{ fmtTime(row.ts) }}</template>
-              </el-table-column>
-              <el-table-column prop="ip" label="IP" width="120" />
-              <el-table-column prop="action" label="动作" width="120" />
-              <el-table-column prop="env" label="环境" width="70" />
-              <el-table-column prop="module" label="模块" min-width="120" show-overflow-tooltip />
-              <el-table-column prop="level" label="级别" width="80" />
-            </el-table>
-          </el-card>
-        </el-col>
-      </el-row>
+      <section class="tables">
+        <div class="ui-surface table-card">
+          <header class="table-hd">
+            <div class="table-title">
+              <el-icon><Clock /></el-icon>
+              <h3>在线会话</h3>
+              <span class="ui-chip">{{ online.length }}</span>
+            </div>
+            <button type="button" class="ui-icon-btn" :disabled="loading" aria-label="刷新在线会话" @click="refresh">
+              <el-icon><Refresh /></el-icon>
+            </button>
+          </header>
+          <el-table :data="online" size="small" stripe max-height="420" empty-text="暂无在线">
+            <el-table-column prop="ip" label="IP" min-width="120" />
+            <el-table-column label="进入" min-width="100">
+              <template #default="{ row }">{{ fmtTime(row.started_at) }}</template>
+            </el-table-column>
+            <el-table-column label="最近活跃" min-width="100">
+              <template #default="{ row }">{{ fmtTime(row.last_seen) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <div class="ui-surface table-card">
+          <header class="table-hd">
+            <div class="table-title">
+              <el-icon><Document /></el-icon>
+              <h3>最近访问</h3>
+              <span class="ui-chip">{{ recent.length }}</span>
+            </div>
+            <button type="button" class="ui-icon-btn" :disabled="loading" aria-label="刷新最近访问" @click="refresh">
+              <el-icon><Refresh /></el-icon>
+            </button>
+          </header>
+          <el-table :data="recent" size="small" stripe max-height="420" empty-text="暂无记录">
+            <el-table-column label="时间" width="160">
+              <template #default="{ row }">{{ fmtTime(row.ts) }}</template>
+            </el-table-column>
+            <el-table-column prop="ip" label="IP" width="120" />
+            <el-table-column prop="action" label="动作" width="120" />
+            <el-table-column prop="env" label="环境" width="70" />
+            <el-table-column prop="module" label="模块" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="level" label="级别" width="80" />
+          </el-table>
+        </div>
+      </section>
     </template>
 
-    <el-alert
-      class="mt"
-      type="info"
-      :closable="false"
-      show-icon
-      title="说明：系统记录访问 IP 与操作元数据（不记录日志正文）。统计页仅白名单 IP 可查看；白名单见 config/access.json。"
-    />
+    <div class="stats-foot">
+      <el-icon><InfoFilled /></el-icon>
+      <span>统计页仅白名单 IP 可查看；白名单见 <code>config/access.json</code>。</span>
+    </div>
   </div>
 </template>
 
@@ -86,6 +106,9 @@
  * AccessStats —— 访问统计页（IP 白名单门禁由后端强制）
  */
 import { reactive, ref, onMounted, onUnmounted } from 'vue'
+import {
+  User, Lock, Histogram, DataAnalysis, Clock, Document, Refresh, InfoFilled,
+} from '@element-plus/icons-vue'
 import { usePresence } from '../../composables/usePresence'
 import { useAccessLog } from '../../composables/useAccessLog'
 
@@ -150,13 +173,86 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <style scoped>
-.stats { flex: 1; overflow: auto; padding: 20px 24px; min-height: 0 }
-.hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px }
-.hd h2 { margin: 0; font-size: 18px }
-.mb { margin-bottom: 14px }
-.mt { margin-top: 16px }
-.metric { text-align: center; padding: 8px 0 }
-.metric .n { font-size: 28px; font-weight: 700; color: var(--t1); line-height: 1.2 }
-.metric .l { font-size: 12px; color: var(--t3); margin-top: 4px }
-.card-hd { display: flex; align-items: center; justify-content: space-between }
+.stats {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: var(--sp-5) var(--sp-6) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.stats-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: 22px 26px;
+  border: 1px solid var(--bd);
+  border-radius: var(--r-xl);
+  background: var(--grad-glow), var(--grad-surface), var(--s1);
+  box-shadow: var(--sh-2);
+}
+.hero-copy h1 {
+  margin: 6px 0 6px;
+  font-size: 26px;
+  font-weight: 760;
+  letter-spacing: -.02em;
+  background: linear-gradient(100deg, var(--t1) 20%, var(--ac));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-copy p { margin: 0; font-size: 13px; color: var(--t2) }
+.hero-side { display: flex; align-items: center; gap: 10px; margin-left: auto }
+
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-3) }
+.ui-kpi > div:last-child { min-width: 0 }
+
+.tables {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.4fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.table-card { padding: var(--sp-4); min-width: 0; overflow: hidden }
+.table-hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: var(--sp-3) }
+.table-title { display: flex; align-items: center; gap: 8px; color: var(--ac) }
+.table-title h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--t1) }
+
+.access-denied {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 48px 24px;
+  text-align: center;
+}
+.access-denied code, .stats-foot code {
+  font-family: var(--font-log);
+  font-size: var(--fs-xs);
+  color: var(--ac);
+  background: var(--s2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.stats-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+  color: var(--t3);
+  border: 1px dashed var(--bd);
+  border-radius: var(--r);
+}
+
+@media (max-width: 1100px) {
+  .tables { grid-template-columns: 1fr }
+}
+@media (max-width: 900px) {
+  .stats { padding: var(--sp-4) var(--sp-3) }
+  .hero-side { margin-left: 0 }
+}
 </style>

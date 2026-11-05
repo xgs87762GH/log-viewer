@@ -422,25 +422,27 @@ onBeforeUnmount(() => clearTimeout(blurTimer))
 
 .fb-panel {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   left: 0;
   right: 0;
   z-index: 20;
   max-height: 280px;
   overflow: auto;
   border: 1px solid var(--bd);
-  border-radius: 8px;
-  background: var(--s1);
-  box-shadow: var(--el-box-shadow-light, 0 4px 12px rgba(0, 0, 0, 0.18));
-  padding: 6px;
+  border-radius: var(--r);
+  background: var(--grad-surface), var(--s1);
+  box-shadow: var(--sh-2);
+  padding: 8px;
 }
 .fb-panel-hd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px 8px;
-  font-size: 12px;
-  font-weight: 600;
+  padding: 4px 8px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
   color: var(--t3);
 }
 .fb-panel-clear {
@@ -448,10 +450,14 @@ onBeforeUnmount(() => clearTimeout(blurTimer))
   background: transparent;
   color: var(--t3);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-family: inherit;
-  padding: 0;
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
+.fb-panel-clear:hover { color: var(--ac); background: var(--surf-hover) }
+.fb-op:hover { color: var(--ac); text-decoration: none }
 .fb-panel-clear:hover { color: var(--err); }
 .fb-hist {
   width: 100%;

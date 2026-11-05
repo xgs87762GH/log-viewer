@@ -51,37 +51,56 @@ const nav = useNavigation()
 .l1 {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 0 10px;
 }
 .l1.collapsed { padding: 0 6px; align-items: center }
 .item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   border: 1px solid transparent;
   background: transparent;
   color: var(--t2);
   font-size: 13px;
   font-weight: 600;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 11px 12px;
+  border-radius: var(--r);
   cursor: pointer;
   font-family: inherit;
-  transition: background .12s, color .12s;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+              transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
+.item::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 3px;
+  height: 20px;
+  border-radius: 0 3px 3px 0;
+  background: var(--grad-accent);
+  transform: translateY(-50%) scaleY(0);
+  transition: transform var(--dur) var(--ease);
+}
+.l1.collapsed .item::before { display: none }
 .l1.collapsed .item {
   width: 40px;
   height: 40px;
   padding: 0;
   justify-content: center;
 }
-.item:hover { background: var(--s2); color: var(--t1) }
+.item:hover { background: var(--surf-hover); color: var(--t1); transform: translateX(2px) }
 .item.on {
-  color: var(--el-color-primary);
-  background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
-  border-color: color-mix(in srgb, var(--el-color-primary) 28%, transparent);
+  color: var(--ac);
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--ac) 16%, transparent),
+    color-mix(in srgb, var(--ac) 4%, transparent));
+  border-color: color-mix(in srgb, var(--ac) 26%, transparent);
+  box-shadow: var(--sh-1);
 }
+.item.on::before { transform: translateY(-50%) scaleY(1) }
 .label { white-space: nowrap }
 </style>

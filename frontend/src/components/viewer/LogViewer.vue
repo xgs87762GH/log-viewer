@@ -1,30 +1,52 @@
 <template>
   <div class="viewer">
-    <el-empty v-if="!nav.currentService" description="从左侧选择应用和级别开始查看" />
+    <div v-if="!nav.currentService" class="ui-empty viewer-empty">
+      <div class="ui-empty-icon"><el-icon :size="26"><Document /></el-icon></div>
+      <div class="ui-empty-title">尚未选择日志</div>
+      <div class="ui-empty-desc">从左侧环境 / 模块树中选择应用和级别，即可开始查看日志。</div>
+    </div>
 
     <template v-else>
       <div class="toolbar">
-        <el-text class="path" truncated>
-          {{ nav.currentEnvInfo.label || nav.env }} › {{ nav.currentService.module }} /
-          {{ selectedFile || (nav.selectedLevel + '.log') }}
-        </el-text>
+        <div class="tb-path">
+          <span class="path-env">{{ nav.currentEnvInfo.label || nav.env }}</span>
+          <span class="path-sep">›</span>
+          <span class="path-mod">{{ nav.currentService.module }}</span>
+          <span class="path-sep">/</span>
+          <span class="path-file">{{ selectedFile || (nav.selectedLevel + '.log') }}</span>
+        </div>
         <LogFilterBar class="filter-slot" />
-        <el-button size="small" :type="wordWrap ? 'primary' : 'default'" @click="toggleWordWrap">换行</el-button>
-        <el-button size="small" :type="autoScroll ? 'primary' : 'default'" @click="toggleAutoScroll">末尾</el-button>
-        <el-button size="small" :loading="loading" @click="() => loadLog({ skipList: true, force: true })">刷新</el-button>
-        <el-dropdown trigger="click" @command="onCopyCommand">
-          <el-button size="small">复制</el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="all">复制全部</el-dropdown-item>
-              <el-dropdown-item command="filtered" :disabled="!filteredRowCount">复制过滤结果</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <div class="ui-toolbar-group tb-actions">
+          <el-tooltip :content="wordWrap ? '关闭自动换行' : '开启自动换行'" placement="top" :show-after="400">
+            <el-button size="small" :type="wordWrap ? 'primary' : 'default'" @click="toggleWordWrap">换行</el-button>
+          </el-tooltip>
+          <el-tooltip :content="autoScroll ? '关闭自动滚到末尾' : '开启自动滚到末尾'" placement="top" :show-after="400">
+            <el-button size="small" :type="autoScroll ? 'primary' : 'default'" @click="toggleAutoScroll">末尾</el-button>
+          </el-tooltip>
+          <span class="ui-divider-v" />
+          <el-tooltip content="重新加载当前日志" placement="top" :show-after="400">
+            <el-button
+              size="small"
+              :icon="Refresh"
+              :loading="loading"
+              aria-label="刷新"
+              @click="() => loadLog({ skipList: true, force: true })"
+            />
+          </el-tooltip>
+          <el-dropdown trigger="click" @command="onCopyCommand">
+            <el-button size="small" :icon="DocumentCopy" title="复制日志" aria-label="复制日志" />
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="all">复制全部</el-dropdown-item>
+                <el-dropdown-item command="filtered" :disabled="!filteredRowCount">复制过滤结果</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </div>
 
       <div class="hist-bar">
-        <el-text size="small" class="hist-label">历史日志</el-text>
+        <span class="ui-chip ui-chip--accent hist-label"><el-icon><Calendar /></el-icon> 历史日志</span>
         <el-date-picker
           v-model="dateFilter"
           type="date"
@@ -55,19 +77,20 @@
             </span>
           </el-option>
         </el-select>
-        <el-button
-          size="small"
-          type="primary"
-          plain
-          :loading="filesLoading"
-          title="强制全量扫描目录并更新本地索引"
-          @click="refreshFileList"
-        >重新探测</el-button>
-        <el-tag size="small" type="info" effect="plain">
-          {{ filteredLogFiles.length }}/{{ logFiles.length }} 个文件
-        </el-tag>
-        <el-text size="small" type="info" class="hist-cache">{{ indexHint }}</el-text>
-        <el-text v-if="ruleHint" size="small" type="info" class="hist-rule">{{ ruleHint }}</el-text>
+        <el-tooltip content="强制全量扫描目录并更新本地索引" placement="top" :show-after="400">
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :icon="Refresh"
+            :loading="filesLoading"
+            aria-label="重新探测"
+            @click="refreshFileList"
+          />
+        </el-tooltip>
+        <span class="ui-chip">{{ filteredLogFiles.length }}/{{ logFiles.length }} 个文件</span>
+        <span class="hist-cache" :title="indexHint">{{ indexHint }}</span>
+        <span v-if="ruleHint" class="ui-chip hist-rule" :title="ruleHint">{{ ruleHint }}</span>
       </div>
 
       <div
@@ -79,23 +102,32 @@
         @scroll="onScroll"
       >
         <div v-if="loading" class="loading-panel">
-          <el-icon class="is-loading" :size="22"><Loading /></el-icon>
-          <span>加载中…</span>
+          <span class="loading-chip">
+            <el-icon class="is-loading" :size="18"><Loading /></el-icon>
+            <span>加载中…</span>
+          </span>
         </div>
-        <el-result v-else-if="error" icon="warning" :sub-title="error" class="tip-err" />
-        <div
-          v-else-if="!lines.length"
-          class="empty-panel"
-        >
-          <el-empty description="暂无日志内容" :image-size="72" />
+        <div v-else-if="error" class="empty-panel">
+          <div class="ui-empty">
+            <div class="ui-empty-icon ui-empty-icon--err"><el-icon><Document /></el-icon></div>
+            <div class="ui-empty-title">加载失败</div>
+            <div class="ui-empty-desc">{{ error }}</div>
+          </div>
         </div>
-        <div
-          v-else-if="filteredRowCount === 0"
-          class="empty-panel"
-        >
-          <el-empty description="无匹配日志" :image-size="72">
+        <div v-else-if="!lines.length" class="empty-panel">
+          <div class="ui-empty">
+            <div class="ui-empty-icon"><el-icon><Document /></el-icon></div>
+            <div class="ui-empty-title">暂无日志内容</div>
+            <div class="ui-empty-desc">当前文件为空，或尚未拉取到日志正文。</div>
+          </div>
+        </div>
+        <div v-else-if="filteredRowCount === 0" class="empty-panel">
+          <div class="ui-empty">
+            <div class="ui-empty-icon"><el-icon><Search /></el-icon></div>
+            <div class="ui-empty-title">无匹配日志</div>
+            <div class="ui-empty-desc">当前过滤条件没有命中任何日志条目。</div>
             <el-button type="primary" size="small" @click="clearFilters">清空过滤</el-button>
-          </el-empty>
+          </div>
         </div>
         <div
           v-else
@@ -134,13 +166,13 @@
       </div>
 
       <div class="status">
-        <el-tag v-if="truncated" type="warning" size="small" effect="plain">已截断（仅显示尾部）</el-tag>
-        <el-tag v-if="lineCapped" type="info" size="small" effect="plain">行数已达上限 {{ appliedMaxLines }}</el-tag>
-        <el-text size="small" type="info">行: {{ displayLines }}</el-text>
-        <el-text size="small" type="info">过滤后: {{ filteredRowCount }}</el-text>
-        <el-text size="small" type="info">已下: {{ fmtSize(downloadedBytes) }} / 限 {{ appliedTailMB }}MB</el-text>
-        <el-text size="small" type="info">文件: {{ fmtSize(size) }}</el-text>
-        <el-text size="small" type="info">更新: {{ updateTime }}</el-text>
+        <span v-if="truncated" class="ui-chip ui-chip--warn">已截断（仅显示尾部）</span>
+        <span v-if="lineCapped" class="ui-chip">行数上限 {{ appliedMaxLines }}</span>
+        <span class="ui-chip"><b>{{ displayLines }}</b> 行</span>
+        <span class="ui-chip" :class="filteredRowCount ? 'ui-chip--accent' : ''"><b>{{ filteredRowCount }}</b> 过滤后</span>
+        <span class="ui-chip"><b>{{ fmtSize(downloadedBytes) }}</b> / {{ appliedTailMB }}MB</span>
+        <span class="ui-chip">文件 {{ fmtSize(size) }}</span>
+        <span class="status-time"><el-icon><Clock /></el-icon> {{ updateTime }}</span>
       </div>
 
       <LogContextDialog
@@ -172,7 +204,7 @@ import { highlightLine } from '../../utils/logParser'
 import { estimateWrapCols, baseRowHeight, readLogFontMetrics } from '../../utils/logTextMetrics'
 import { buildRowLayout, findStartIndex, findEndIndex } from '../../utils/logVirtualLayout'
 import { processLogAsync, processLogSync } from '../../utils/logProcessClient'
-import { Loading } from '@element-plus/icons-vue'
+import { Loading, Refresh, DocumentCopy, Document, Clock, Calendar, Search } from '@element-plus/icons-vue'
 import LogFilterBar from './LogFilterBar.vue'
 import LogFoldBar from './LogFoldBar.vue'
 import LogContextDialog from './LogContextDialog.vue'
@@ -846,45 +878,53 @@ onUnmounted(() => {
 
 <style scoped>
 .viewer { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden }
+.viewer-empty { flex: 1; justify-content: center }
 
 .toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
   padding: 10px 14px;
   border-bottom: 1px solid var(--bd);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: var(--s1);
+  background: var(--grad-surface), var(--s1);
   flex-shrink: 0;
 }
-.path { flex: 1; min-width: 140px; font-family: var(--font-log); font-size: 12.5px }
-.filter-slot { flex: 1; min-width: 240px; max-width: min(720px, 100%) }
+.tb-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 200px;
+  min-width: 160px;
+  font-family: var(--font-log);
+  font-size: 12px;
+  color: var(--t3);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.path-env { color: var(--ac); font-weight: 700; flex-shrink: 0 }
+.path-sep { color: var(--bd2); flex-shrink: 0 }
+.path-mod { color: var(--t2); font-weight: 600; overflow: hidden; text-overflow: ellipsis }
+.path-file { color: var(--t1); font-weight: 600; overflow: hidden; text-overflow: ellipsis }
+.filter-slot { flex: 1 1 260px; min-width: 240px; max-width: min(720px, 100%) }
+.tb-actions { flex-shrink: 0 }
 
 .hist-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
   padding: 8px 14px;
   border-bottom: 1px solid var(--bd);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: color-mix(in srgb, var(--el-color-primary) 6%, var(--s1));
+  background: color-mix(in srgb, var(--ac) 5%, var(--s1));
   flex-shrink: 0;
 }
-.hist-label {
-  font-weight: 600;
-  color: var(--el-color-primary);
-  flex-shrink: 0;
-}
+.hist-label { flex-shrink: 0 }
 .hist-date { width: 148px; flex-shrink: 0 }
 .hist-sel { width: min(420px, 100%); min-width: 220px; flex: 1 }
-.hist-rule { opacity: 0.75; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.file-opt {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-}
+.hist-rule { opacity: .85; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.hist-cache { font-size: var(--fs-xs); color: var(--t3); opacity: .8 }
+.file-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100% }
 
 .loading-panel {
   position: absolute;
@@ -893,12 +933,21 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  background: color-mix(in srgb, var(--bg, #0f1117) 68%, transparent);
+  backdrop-filter: blur(4px);
+}
+.loading-chip {
+  display: inline-flex;
+  align-items: center;
   gap: 10px;
-  background: color-mix(in srgb, var(--bg, #0f1117) 72%, transparent);
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--bd);
+  background: var(--grad-surface), var(--s1);
+  box-shadow: var(--sh-2);
   color: var(--t1);
-  font-size: 13.5px;
-  font-weight: 500;
-  backdrop-filter: blur(2px);
+  font-size: 13px;
+  font-weight: 600;
 }
 .empty-panel {
   position: absolute;
@@ -908,13 +957,12 @@ onUnmounted(() => {
   justify-content: center;
   z-index: 1;
 }
-.tip-err { padding: 40px 16px }
+.ui-empty-icon--err { color: var(--err); background: var(--err-bg); border-color: var(--err-bd) }
 
 .v-viewport { position: relative; width: 100% }
 .v-viewport.no-wrap { width: max-content; min-width: 100% }
 .v-content { position: absolute; top: 0; left: 0; width: 100% }
 .v-viewport.no-wrap .v-content { width: max-content; min-width: 100% }
-
 .ln-fold {
   display: flex;
   width: 100% !important;
@@ -924,25 +972,37 @@ onUnmounted(() => {
   padding: 2px 0;
   overflow: visible;
 }
-.ln-fold:hover { background: transparent !important; }
+.ln-fold:hover { background: transparent !important }
 
 .status {
-  padding: 6px 16px;
-  border-top: 1px solid var(--bd);
   display: flex;
-  gap: 14px;
-  background: var(--s1);
-  flex-shrink: 0;
   align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
+  padding: 7px 14px;
+  border-top: 1px solid var(--bd);
+  background: var(--grad-surface), var(--s1);
+  flex-shrink: 0;
+}
+.status .ui-chip b { color: var(--t1); font-variant-numeric: tabular-nums }
+.status-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--t3);
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {
   .toolbar { padding: 8px 10px }
-  .path { flex: 1 1 100%; min-width: 0 }
+  .tb-path { flex: 1 1 100%; min-width: 0 }
   .filter-slot { flex: 1 1 100%; max-width: none; min-width: 0 }
+  .tb-actions { margin-left: auto }
   .hist-bar { padding: 6px 10px }
   .hist-date { width: 132px }
   .hist-sel { min-width: 160px }
+  .status-time { margin-left: 0 }
 }
 </style>

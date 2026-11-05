@@ -1,125 +1,228 @@
 <template>
   <div class="dashboard">
-    <div v-if="!logs.config" class="loading">
-      <el-icon class="is-loading" :size="36"><Loading /></el-icon>
-      <div>加载配置中…</div>
+    <div v-if="!logs.config" class="ui-empty">
+      <div class="ui-empty-icon"><el-icon :size="26"><Loading class="is-loading" /></el-icon></div>
+      <div class="ui-empty-title">正在加载配置</div>
+      <div class="ui-empty-desc">读取环境与模块清单，请稍候…</div>
     </div>
 
     <template v-else>
-      <div class="dash-top">
-        <div class="dash-hd">
-          <h2>{{ envLabel }}</h2>
-          <el-tag type="info" effect="plain" round>{{ nav.services.length }} 个模块</el-tag>
+      <!-- 顶部品牌区：光晕 + 渐变表面，承载环境切换与批量探测 -->
+      <section class="dash-hero">
+        <div class="hero-copy">
+          <div class="ui-eyebrow">Log Center / 环境概览</div>
+          <h1>{{ envLabel }}</h1>
+          <p>选择级别打开日志聚合，或直达目录与归档。「探测级别」串行请求当前环境各服务目录一次，不自动轮询。</p>
+        </div>
+        <div class="hero-actions">
+          <span class="ui-eyebrow">当前环境</span>
+          <div class="env-switch" role="group" aria-label="切换环境">
+            <button
+              v-for="key in nav.envKeys"
+              :key="key"
+              type="button"
+              class="env-btn"
+              :class="{ on: nav.env === key }"
+              :aria-pressed="nav.env === key"
+              @click="nav.selectEnv(key)"
+            >{{ logs.envs[key]?.icon || '' }} {{ logs.envs[key]?.label || key }}</button>
+          </div>
           <el-button
-            size="small"
             type="primary"
-            plain
+            :icon="Refresh"
             :loading="probing"
             :disabled="!nav.services.length"
             @click="probeEnv"
           >探测级别</el-button>
         </div>
-        <el-radio-group :model-value="nav.env" size="small" @change="nav.selectEnv">
-          <el-radio-button v-for="key in nav.envKeys" :key="key" :value="key">
-            {{ logs.envs[key]?.icon || '' }} {{ logs.envs[key]?.label || key }}
-          </el-radio-button>
-        </el-radio-group>
-        <div v-if="download.active" class="dl-status">
-          <span class="dl-label" :title="download.label">下载中 {{ download.label }}</span>
-          <el-progress
-            :percentage="download.percent"
-            :stroke-width="6"
-            :show-text="false"
-            class="dl-progress"
-          />
-          <span class="dl-size">{{ fmtBytes(download.received) }}<template v-if="download.total"> / {{ fmtBytes(download.total) }}</template></span>
-          <el-button size="small" type="danger" plain @click="cancelDownload">取消</el-button>
-        </div>
-      </div>
-      <p class="dash-desc">
-        选择级别打开日志聚合，或使用外链 / 目录直达 LogIndex。
-        打开日志后可在工具栏选择历史日期归档；「探测级别」会串行请求当前环境各服务目录一次（不自动、不轮询）。
-      </p>
+      </section>
 
-      <el-row :gutter="16">
-        <el-col
-          v-for="(svc, i) in nav.services"
-          :key="svc.app + i"
-          :xs="24" :sm="12" :lg="8"
-          class="card-col"
+      <!-- 概览指标 -->
+      <section class="kpi-row" aria-label="环境概览指标">
+        <div class="ui-surface ui-kpi">
+          <div class="ui-kpi-icon"><el-icon><Monitor /></el-icon></div>
+          <div><div class="ui-kpi-value">{{ stats.modules }}</div><div class="ui-kpi-label">模块</div></div>
+        </div>
+        <div class="ui-surface ui-kpi">
+          <div class="ui-kpi-icon ui-kpi-icon--info"><el-icon><Document /></el-icon></div>
+          <div><div class="ui-kpi-value">{{ stats.levels }}</div><div class="ui-kpi-label">日志级别</div></div>
+        </div>
+        <div class="ui-surface ui-kpi">
+          <div class="ui-kpi-icon ui-kpi-icon--trc"><el-icon><Files /></el-icon></div>
+          <div><div class="ui-kpi-value">{{ stats.probed }}</div><div class="ui-kpi-label">已探测</div></div>
+        </div>
+        <div class="ui-surface ui-kpi">
+          <div class="ui-kpi-icon ui-kpi-icon--warn"><el-icon><Link /></el-icon></div>
+          <div><div class="ui-kpi-value">{{ stats.mro }}</div><div class="ui-kpi-label">MRO 直链</div></div>
+        </div>
+      </section>
+
+      <!-- 检索与布局控制 -->
+      <section class="dash-controls ui-surface">
+        <el-input
+          v-model="search"
+          :prefix-icon="Search"
+          placeholder="搜索模块 / 应用 / 主机 / 级别"
+          clearable
+          class="search-input"
+          aria-label="搜索模块"
+        />
+        <div class="ctrl-right">
+          <label class="switch-label">
+            <el-switch v-model="onlyProbed" size="small" />
+            <span>仅已探测</span>
+          </label>
+          <span class="ui-divider-v" />
+          <div class="density" role="group" aria-label="布局密度">
+            <el-tooltip content="舒适布局" placement="top" :show-after="400">
+              <button
+                type="button"
+                class="ui-icon-btn"
+                :class="{ on: density === 'comfortable' }"
+                :aria-pressed="density === 'comfortable'"
+                aria-label="舒适布局"
+                @click="density = 'comfortable'"
+              ><el-icon><Grid /></el-icon></button>
+            </el-tooltip>
+            <el-tooltip content="紧凑布局" placement="top" :show-after="400">
+              <button
+                type="button"
+                class="ui-icon-btn"
+                :class="{ on: density === 'compact' }"
+                :aria-pressed="density === 'compact'"
+                aria-label="紧凑布局"
+                @click="density = 'compact'"
+              ><el-icon><Menu /></el-icon></button>
+            </el-tooltip>
+          </div>
+          <span class="ui-chip ui-chip--accent">{{ filteredServices.length }} / {{ stats.modules }}</span>
+        </div>
+      </section>
+
+      <!-- 模块卡片 -->
+      <section class="svc-grid" :class="{ compact: density === 'compact' }" aria-label="模块列表">
+        <article
+          v-for="item in filteredServices"
+          :key="item.svc.app + item.i"
+          class="svc-card ui-surface"
         >
-          <el-card shadow="hover" class="svc-card">
-            <template #header>
-              <div class="card-hd">
-                <span class="nm">{{ svc.module }}</span>
-                <el-tag size="small" type="info" effect="plain">{{ svc.host }}</el-tag>
-              </div>
-            </template>
-            <div class="card-bd">
-              <el-button size="small" tag="a" :href="logs.buildDirUrl(svc.host, svc.app)" target="_blank">
-                目录
-              </el-button>
-              <template v-if="nav.getLevels(svc).length">
-                <el-button-group v-for="lv in nav.getLevels(svc)" :key="lv" class="lv-group">
-                  <el-button
-                    size="small"
-                    :type="levelTagType(lv)"
-                    plain
-                    @click="nav.openLog(i, lv)"
-                  >{{ lv }}</el-button>
-                  <el-button
-                    size="small"
-                    tag="a"
-                    :href="logs.buildLogUrl(svc.host, svc.app, lv)"
-                    target="_blank"
-                    :title="'新标签打开 ' + lv"
-                  >↗</el-button>
-                  <el-button
-                    size="small"
-                    :icon="Download"
-                    :loading="download.active && download.key === downloadKey(svc, lv)"
-                    :disabled="download.active && download.key !== downloadKey(svc, lv)"
-                    :title="'下载 ' + lv + ' 日志文件'"
-                    @click="downloadLevel(svc, lv)"
-                  />
-                </el-button-group>
-                <el-button size="small" :icon="DocumentCopy" @click="copyUrls(svc)" title="复制全部链接" />
-              </template>
-              <el-tag
-                v-else-if="logs.getIndexMeta(svc.host, svc.app, nav.env)"
-                size="small"
-                type="warning"
-                effect="plain"
-              >无业务级别日志</el-tag>
-              <el-text v-else size="small" type="info">未探测</el-text>
+          <header class="card-hd">
+            <span class="ui-dot" :class="dotClass(item)" />
+            <div class="card-title">
+              <div class="nm" :title="item.svc.module">{{ item.svc.module }}</div>
+              <div class="sub">{{ item.svc.app }} · {{ item.svc.host }}</div>
             </div>
-          </el-card>
-        </el-col>
-      </el-row>
+            <span class="ui-chip" :class="item.levels.length ? 'ui-chip--accent' : ''">
+              {{ item.levels.length }} 级别
+            </span>
+          </header>
 
-      <div v-if="nav.mro.length" class="mro-sec">
-        <h3>MRO 直链（无需账号）</h3>
-        <div class="mro-links">
-          <el-link
-            v-for="m in nav.mro"
-            :key="m.label"
-            :href="m.url"
-            target="_blank"
-            type="primary"
-            class="mro-a"
-          >
-            <el-tag size="small" class="mro-tag">{{ m.label }}</el-tag>
-            {{ m.url }}
-          </el-link>
-        </div>
+          <div v-if="item.levels.length" class="card-levels">
+            <div v-for="lv in item.levels" :key="lv" class="lv-item">
+              <button
+                type="button"
+                class="lv-open"
+                :class="`tone-${levelTagType(lv)}`"
+                :title="`打开 ${lv} 日志聚合`"
+                @click="nav.openLog(item.i, lv)"
+              >{{ lv }}</button>
+              <el-tooltip :content="`新标签打开 ${lv} 日志文件`" placement="top" :show-after="400">
+                <a
+                  class="ui-icon-btn"
+                  :href="logs.buildLogUrl(item.svc.host, item.svc.app, lv)"
+                  target="_blank"
+                  :aria-label="`新标签打开 ${lv} 日志文件`"
+                ><el-icon><Link /></el-icon></a>
+              </el-tooltip>
+              <el-tooltip content="下载该级别日志文件" placement="top" :show-after="400">
+                <button
+                  type="button"
+                  class="ui-icon-btn"
+                  :disabled="download.active && download.key !== downloadKey(item.svc, lv)"
+                  :aria-label="`下载 ${lv} 日志文件`"
+                  @click="downloadLevel(item.svc, lv)"
+                ><el-icon><Loading v-if="isDownloading(item.svc, lv)" class="is-loading" /><Download v-else /></el-icon></button>
+              </el-tooltip>
+            </div>
+          </div>
+          <div v-else class="card-note" :class="{ 'card-note--warn': item.probed }">
+            <el-icon><InfoFilled /></el-icon>
+            {{ item.probed ? '该目录无业务级别日志' : '尚未探测，可点右上角「探测级别」' }}
+          </div>
+
+          <footer class="card-ft">
+            <a class="ft-link" :href="logs.buildDirUrl(item.svc.host, item.svc.app)" target="_blank">
+              <el-icon><Folder /></el-icon> 目录
+            </a>
+            <el-tooltip content="复制全部日志链接" placement="top" :show-after="400">
+              <button
+                type="button"
+                class="ui-icon-btn"
+                :disabled="!item.levels.length"
+                aria-label="复制全部日志链接"
+                @click="copyUrls(item.svc)"
+              ><el-icon><DocumentCopy /></el-icon></button>
+            </el-tooltip>
+          </footer>
+        </article>
+      </section>
+
+      <div v-if="!filteredServices.length" class="ui-empty">
+        <div class="ui-empty-icon"><el-icon><Search /></el-icon></div>
+        <div class="ui-empty-title">没有匹配的模块</div>
+        <div class="ui-empty-desc">换个关键词，或关闭「仅已探测」筛选后重试。</div>
+        <el-button size="small" @click="resetFilters">清除筛选</el-button>
       </div>
+
+      <!-- MRO 直链 -->
+      <section v-if="nav.mro.length" class="mro-sec ui-surface">
+        <header class="mro-hd">
+          <div class="mro-title">
+            <el-icon><Link /></el-icon>
+            <h3>MRO 直链</h3>
+            <span class="ui-chip">{{ nav.mro.length }}</span>
+          </div>
+          <span class="mro-hint">无需账号 · 悬停查看完整地址</span>
+        </header>
+        <div class="mro-chips">
+          <el-tooltip v-for="m in nav.mro" :key="m.label" :content="m.url" placement="top" :show-after="300">
+            <a class="mro-chip" :href="m.url" target="_blank">
+              <el-icon><Link /></el-icon>
+              <span>{{ m.label }}</span>
+              <span class="mro-arrow" aria-hidden="true">↗</span>
+            </a>
+          </el-tooltip>
+        </div>
+      </section>
     </template>
+
+    <!-- 下载浮条：与主内容解耦，避免撑动网格 -->
+    <Transition name="dl">
+      <div v-if="download.active" class="dl-dock" role="status">
+        <div class="dl-icon"><el-icon><Download /></el-icon></div>
+        <div class="dl-meta">
+          <div class="dl-name">正在下载 · {{ download.label }}</div>
+          <el-progress :percentage="download.percent" :stroke-width="5" :show-text="false" />
+        </div>
+        <span class="dl-size">
+          {{ fmtBytes(download.received) }}<template v-if="download.total"> / {{ fmtBytes(download.total) }}</template>
+        </span>
+        <el-tooltip content="取消下载" placement="top" :show-after="300">
+          <button type="button" class="ui-icon-btn" aria-label="取消下载" @click="cancelDownload">
+            <el-icon><Close /></el-icon>
+          </button>
+        </el-tooltip>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { Loading, DocumentCopy, Download } from '@element-plus/icons-vue'
+import {
+  Loading, DocumentCopy, Download, Search, Link, Folder, Monitor,
+  Document, Files, Refresh, Grid, Menu, InfoFilled, Close,
+} from '@element-plus/icons-vue'
 import { useLogs } from '../../composables/useLogs'
 import { useNavigation } from '../../composables/useNavigation'
 import { useToast } from '../../composables/useToast'
@@ -132,14 +235,13 @@ const toast = useToast()
 const access = useAccessLog()
 const probing = ref(false)
 
+const search = ref('')
+const onlyProbed = ref(false)
+const density = ref('comfortable')
+
 /** 单一下载任务：进度、标签与当前 key 都归仪表盘本地，不进全局 store */
 const download = reactive({
-  active: false,
-  key: '',
-  label: '',
-  received: 0,
-  total: 0,
-  percent: 0,
+  active: false, key: '', label: '', received: 0, total: 0, percent: 0,
 })
 let downloadAbort = null
 let lastProgressAt = 0
@@ -148,6 +250,41 @@ const envLabel = computed(() => {
   const info = nav.currentEnvInfo
   return `${info.icon || ''} ${info.label || nav.env}`.trim()
 })
+
+/** 一次性算好每行的级别与探测状态，模板不再重复调用 composable */
+const serviceRows = computed(() => nav.services.map((svc, i) => ({
+  svc,
+  i,
+  levels: nav.getLevels(svc),
+  probed: !!logs.getIndexMeta(svc.host, svc.app, nav.env),
+})))
+
+const filteredServices = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return serviceRows.value.filter(({ svc, levels, probed }) => {
+    if (onlyProbed.value && !probed) return false
+    if (!q) return true
+    return [svc.module, svc.app, svc.host, levels.join(' ')]
+      .some((v) => String(v || '').toLowerCase().includes(q))
+  })
+})
+
+const stats = computed(() => ({
+  modules: serviceRows.value.length,
+  levels: serviceRows.value.reduce((n, r) => n + r.levels.length, 0),
+  probed: serviceRows.value.filter((r) => r.probed).length,
+  mro: nav.mro.length,
+}))
+
+function dotClass(item) {
+  if (item.levels.length) return 'ui-dot--ok'
+  return item.probed ? 'ui-dot--warn' : ''
+}
+
+function resetFilters() {
+  search.value = ''
+  onlyProbed.value = false
+}
 
 onMounted(() => {
   access.track(access.ACTION.OPEN_DASHBOARD)
@@ -161,14 +298,14 @@ async function probeEnv() {
     return
   }
   probing.value = true
-  let lastProgressAt = 0
+  let hintAt = 0
   try {
     const r = await logs.discoverEnvLevels(nav.env, {
       force: true,
       onProgress: ({ done, total }) => {
         const now = Date.now()
-        if (done < total && now - lastProgressAt < 800) return
-        lastProgressAt = now
+        if (done < total && now - hintAt < 800) return
+        hintAt = now
         toast.success('探测级别中', `已探测 ${done}/${total}`)
       },
     })
@@ -205,6 +342,10 @@ function copyUrls(svc) {
 
 function downloadKey(svc, lv) {
   return `${svc.host}|${svc.app}|${lv}`
+}
+
+function isDownloading(svc, lv) {
+  return download.active && download.key === downloadKey(svc, lv)
 }
 
 function fmtBytes(n) {
@@ -269,50 +410,283 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.dashboard { flex: 1; overflow-y: auto; padding: 20px 24px; min-height: 0 }
-.dash-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.dash-hd { display: flex; align-items: center; gap: 10px }
-.dash-hd h2 { margin: 0; font-size: 18px; font-weight: 700 }
-.dash-desc { font-size: 13px; color: var(--t3); margin: 0 0 16px }
-
-.card-col { margin-bottom: 16px }
-.card-hd { display: flex; align-items: center; gap: 10px }
-.nm { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.card-bd { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
-.lv-group { margin-right: 0 }
-
-.mro-sec { margin-top: 8px }
-.mro-sec h3 { font-size: 14px; color: var(--t2); margin: 0 0 10px; font-weight: 600 }
-.mro-links { display: flex; flex-direction: column; gap: 8px }
-.mro-a { justify-content: flex-start; font-size: 13px }
-.mro-tag { margin-right: 8px }
-
-.dl-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  font-size: 12px;
-  color: var(--t2);
-}
-.dl-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.dl-progress { flex: 1 1 160px; min-width: 120px }
-.dl-size { flex-shrink: 0; font-variant-numeric: tabular-nums }
-
-.loading {
+.dashboard {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--sp-5) var(--sp-6) var(--sp-6);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 60vh;
+  gap: var(--sp-4);
+}
+
+/* ── 顶部品牌区 ── */
+.dash-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  padding: 26px 28px;
+  border: 1px solid var(--bd);
+  border-radius: var(--r-xl);
+  background: var(--grad-glow), var(--grad-surface), var(--s1);
+  box-shadow: var(--sh-2);
+}
+.dash-hero::after {
+  content: '';
+  position: absolute;
+  right: -80px;
+  bottom: -140px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ac) 16%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.hero-copy, .hero-actions { position: relative; z-index: 1 }
+.hero-copy { max-width: 620px }
+.hero-copy h1 {
+  margin: 6px 0 8px;
+  font-size: 30px;
+  font-weight: 760;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  background: linear-gradient(100deg, var(--t1) 20%, var(--ac));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-copy p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--t2) }
+.hero-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 10px }
+.env-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--bd);
+  background: color-mix(in srgb, var(--s2) 70%, transparent);
+}
+.env-btn {
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--t2);
-  gap: 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--dur) var(--ease);
+}
+.env-btn:hover { color: var(--t1); background: var(--surf-hover) }
+.env-btn.on {
+  color: #fff;
+  background: var(--grad-accent);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--ac) 32%, transparent);
+}
+
+/* ── 概览指标 ── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-3);
+}
+.ui-kpi { min-width: 0 }
+.ui-kpi > div:last-child { min-width: 0 }
+
+/* ── 检索与布局控制 ── */
+.dash-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+.search-input { flex: 1 1 280px; max-width: 420px }
+.ctrl-right { display: flex; align-items: center; gap: var(--sp-3); margin-left: auto }
+.switch-label { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--t2); cursor: pointer; white-space: nowrap }
+.density { display: flex; gap: 4px }
+.ui-icon-btn.on {
+  color: var(--ac);
+  border-color: color-mix(in srgb, var(--ac) 42%, var(--bd));
+  background: var(--surf-active);
+}
+
+/* ── 模块卡片 ── */
+.svc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+.svc-grid.compact { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--sp-3) }
+.svc-card {
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.svc-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--sh-2);
+  border-color: color-mix(in srgb, var(--ac) 32%, var(--bd));
+}
+.compact .svc-card { padding: var(--sp-3); gap: var(--sp-2) }
+.card-hd { display: flex; align-items: flex-start; gap: 10px }
+.card-hd .ui-dot { margin-top: 7px }
+.card-title { flex: 1; min-width: 0 }
+.nm {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--t1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sub {
+  font-size: var(--fs-xs);
+  color: var(--t3);
+  font-family: var(--font-log);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-levels { display: flex; flex-wrap: wrap; gap: var(--sp-2) }
+.lv-item { display: flex; align-items: center; gap: 3px }
+.lv-open {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--bd);
+  background: var(--s2);
+  color: var(--t1);
+  font-family: var(--font-log);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.lv-open:hover { transform: translateY(-1px); box-shadow: var(--sh-1) }
+.lv-open.tone-success, .lv-open.tone-primary { color: var(--info); border-color: var(--info-bd); background: var(--info-bg) }
+.lv-open.tone-warning { color: var(--warn); border-color: var(--warn-bd); background: var(--warn-bg) }
+.lv-open.tone-danger { color: var(--err); border-color: var(--err-bd); background: var(--err-bg) }
+.lv-open.tone-info { color: var(--dbg); border-color: var(--dbg-bd); background: var(--dbg-bg) }
+.ui-icon-btn { width: 28px; height: 28px; font-size: 13px }
+a.ui-icon-btn { text-decoration: none }
+.card-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--s2);
+  border: 1px dashed var(--bd);
+  color: var(--t3);
+  font-size: var(--fs-sm);
+}
+.card-note--warn { color: var(--warn); border-color: var(--warn-bd); background: var(--warn-bg) }
+.card-ft {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--bd);
+}
+.compact .card-ft { padding-top: var(--sp-2) }
+.ft-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--t2);
+  text-decoration: none;
+  transition: color var(--dur) var(--ease);
+}
+.ft-link:hover { color: var(--ac) }
+
+/* ── MRO ── */
+.mro-sec { padding: var(--sp-4) }
+.mro-hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: var(--sp-3) }
+.mro-title { display: flex; align-items: center; gap: 8px; color: var(--ac) }
+.mro-title h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--t1) }
+.mro-hint { font-size: var(--fs-xs); color: var(--t3) }
+.mro-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2) }
+.mro-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--bd);
+  background: var(--s2);
+  color: var(--t2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--dur) var(--ease);
+}
+.mro-chip:hover {
+  color: var(--ac);
+  border-color: color-mix(in srgb, var(--ac) 40%, var(--bd));
+  background: var(--surf-hover);
+  transform: translateY(-1px);
+}
+.mro-arrow { opacity: .6; font-size: 12px }
+
+/* ── 下载浮条 ── */
+.dl-dock {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: min(420px, calc(100vw - 48px));
+  padding: var(--sp-3);
+  border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--ac) 34%, var(--bd));
+  background: var(--grad-surface), var(--s1);
+  box-shadow: var(--sh-3);
+}
+.dl-icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 14%, transparent);
+  font-size: 16px;
+}
+.dl-meta { flex: 1; min-width: 0 }
+.dl-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--t1);
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dl-size { font-size: var(--fs-xs); color: var(--t3); font-variant-numeric: tabular-nums; white-space: nowrap }
+.dl-enter-active, .dl-leave-active { transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease) }
+.dl-enter-from, .dl-leave-to { opacity: 0; transform: translateY(12px) }
+
+@media (max-width: 900px) {
+  .dashboard { padding: var(--sp-4) var(--sp-3) }
+  .dash-hero { padding: var(--sp-4) }
+  .hero-copy h1 { font-size: 24px }
+  .ctrl-right { width: 100%; margin-left: 0; justify-content: space-between }
+  .search-input { max-width: none; flex: 1 1 100% }
 }
 </style>

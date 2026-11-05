@@ -9,7 +9,7 @@
     @opened="scrollFocusIntoView"
   >
     <div class="ctx-toolbar">
-      <span>前后 {{ win.before }} / {{ win.after }} 行</span>
+      <span class="ui-chip ui-chip--accent">前后 {{ win.before }} / {{ win.after }} 行</span>
       <el-button size="small" :disabled="upBlocked" @click="loadMore('up')">向前加载</el-button>
       <el-button size="small" :disabled="downBlocked" @click="loadMore('down')">向后加载</el-button>
       <el-button size="small" @click="copyContext">复制上下文</el-button>

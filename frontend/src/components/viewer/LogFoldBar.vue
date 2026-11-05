@@ -33,22 +33,29 @@ defineEmits(['toggle'])
   align-items: center;
   justify-content: center;
   gap: 14px;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--t3) 22%, transparent);
+  border-radius: var(--r-sm);
   cursor: pointer;
-  background: color-mix(in srgb, var(--t3) 14%, var(--log-bg));
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--t3) 10%, var(--log-bg)),
+    color-mix(in srgb, var(--ac) 8%, var(--log-bg)),
+    color-mix(in srgb, var(--t3) 10%, var(--log-bg)));
   color: var(--t2);
-  font-size: 12px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
   font-family: var(--font-ui);
   line-height: 1;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .fold-bar:hover {
-  background: color-mix(in srgb, var(--ac) 16%, var(--log-bg));
+  background: color-mix(in srgb, var(--ac) 18%, var(--log-bg));
+  border-color: color-mix(in srgb, var(--ac) 40%, transparent);
   color: var(--ac);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 .fold-bar:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ac) 55%, transparent);
+  outline: 2px solid var(--ac);
   outline-offset: 1px;
 }
 .fold-bar-line {
