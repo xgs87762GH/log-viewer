@@ -46,6 +46,31 @@ export function filterLogEntries(entries, lines, matchFn) {
   })
 }
 
+/**
+ * 一次性构建每条日志的小写搜索文本（仅在 lines 变化时执行）。
+ * 与 filterLogEntries 的 blob 拼接规则完全一致，内存约一份正文副本。
+ * @returns {string[]} 与 entries 同序
+ */
+export function buildEntrySearchIndex(entries, lines) {
+  return entries.map((entry) => {
+    const parts = new Array(entry.rows.length)
+    for (let j = 0; j < entry.rows.length; j += 1) {
+      parts[j] = String(lines[entry.rows[j].idx] ?? '')
+    }
+    return parts.join('\n').toLowerCase()
+  })
+}
+
+/** 基于编译 matcher 过滤；matcher 为 null 时原样返回。 */
+export function filterEntriesByMatcher(entries, searchIndex, matcher) {
+  if (!matcher) return entries
+  const out = []
+  for (let i = 0; i < entries.length; i += 1) {
+    if (matcher(searchIndex[i])) out.push(entries[i])
+  }
+  return out
+}
+
 /** 条目内物理行总数 */
 export function countEntryRows(entries) {
   let n = 0

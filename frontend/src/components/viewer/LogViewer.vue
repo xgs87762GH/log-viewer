@@ -161,7 +161,7 @@
  * 折叠语义：单条日志视觉行数超阈值则文章式折叠（限高裁切，不改正文）。
  * 渲染：可变行高虚拟列表（换行开/关统一路径），仅窗口内高亮。
  */
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useLogs } from '../../composables/useLogs'
 import { useSettings } from '../../composables/useSettings'
 import { useNavigation } from '../../composables/useNavigation'
@@ -217,7 +217,7 @@ const indexHint = ref('索引未建立')
 
 const expandedIds = ref(new Set())
 
-const viewRows = ref([])
+const viewRows = shallowRef([])
 const filteredRowCount = ref(0)
 
 /** 上下文锚点是原始行下标，与过滤后的 viewRows 完全解耦 */
@@ -424,6 +424,9 @@ function resetViewData() {
   hlCache.clear()
 }
 
+const REBUILD_DEBOUNCE_MS = 60
+let rebuildTimer = 0
+
 async function rebuildViewRows() {
   const seq = ++processSeq
   const args = {
@@ -438,10 +441,10 @@ async function rebuildViewRows() {
   }
   try {
     const result = await processLogAsync(args)
-    if (seq !== processSeq) return
+    if (seq !== processSeq || result.expired) return
     viewRows.value = result.viewRows
     filteredRowCount.value = result.filteredRowCount
-    hlCache.clear()
+    // paintRow 缓存键已含关键词，无需每次重建清空；lines 变化时 resetViewData 会清
   } catch (e) {
     if (seq !== processSeq) return
     const result = processLogSync(args)
@@ -450,19 +453,16 @@ async function rebuildViewRows() {
   }
 }
 
+/** 条件 / 折叠 / 换行变化走防抖；lines 由 loadLog 显式重建，避免重复 query */
+function scheduleRebuild() {
+  clearTimeout(rebuildTimer)
+  rebuildTimer = setTimeout(rebuildViewRows, REBUILD_DEBOUNCE_MS)
+}
+
 watch(
-  [
-    lines,
-    includeTerms,
-    excludeTerms,
-    expandedIds,
-    foldEnabled,
-    foldMaxLines,
-    wordWrap,
-    wrapCols,
-  ],
+  [includeTerms, excludeTerms, expandedIds, foldEnabled, foldMaxLines, wordWrap, wrapCols],
   () => {
-    rebuildViewRows()
+    scheduleRebuild()
   },
   { deep: false },
 )
@@ -840,6 +840,7 @@ onUnmounted(() => {
   if (onWinResize) window.removeEventListener('resize', onWinResize)
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
   clearTimeout(resizeTimer)
+  clearTimeout(rebuildTimer)
 })
 </script>
 

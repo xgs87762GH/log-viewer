@@ -10,9 +10,9 @@ import { visualLinesOf } from './logTextMetrics'
 /** 折叠条占位视觉行数（略高于普通行，便于点按） */
 export const FOLD_BAR_VISUAL_LINES = 1.45
 
-function entryVisualLines(entry, lines, opts) {
+function entryVisualLines(entry, lines, visualOf) {
   let n = 0
-  for (const row of entry.rows) n += visualLinesOf(lines[row.idx], opts)
+  for (const row of entry.rows) n += visualOf(row.idx, String(lines[row.idx] ?? ''))
   return n
 }
 
@@ -56,15 +56,23 @@ export function buildViewRows({
   foldMaxLines,
   wordWrap,
   wrapCols,
+  visualOf,
 }) {
   const cpl = wrapCols || 100
   const limit = Math.max(1, Number(foldMaxLines) || 5)
   const openSet = expandedIds instanceof Set ? expandedIds : new Set(expandedIds || [])
   const opts = { wordWrap: !!wordWrap, wrapCols: cpl }
+  // Worker 传入按 (idx, wordWrap, wrapCols) 预计算的表；不传则沿用原逐行计算
+  const vl = typeof visualOf === 'function'
+    ? (idx, text) => {
+        const v = visualOf(idx)
+        return Number.isFinite(v) && v > 0 ? v : visualLinesOf(text, opts)
+      }
+    : (_idx, text) => visualLinesOf(text, opts)
   const out = []
 
   for (const entry of entries) {
-    const totalVis = entryVisualLines(entry, lines, opts)
+    const totalVis = entryVisualLines(entry, lines, vl)
     const need = foldEnabled && totalVis > limit
     const open = openSet.has(entry.id)
 
@@ -73,7 +81,7 @@ export function buildViewRows({
         const text = String(lines[row.idx] ?? '')
         out.push(
           lineRow(row, text, entry.id, {
-            visualLines: visualLinesOf(text, opts),
+            visualLines: vl(row.idx, text),
           }),
         )
       })
@@ -86,7 +94,7 @@ export function buildViewRows({
     for (const row of entry.rows) {
       if (budget <= 0) break
       const text = String(lines[row.idx] ?? '')
-      const vis = visualLinesOf(text, opts)
+      const vis = vl(row.idx, text)
       if (vis <= budget) {
         out.push(lineRow(row, text, entry.id, { visualLines: vis }))
         budget -= vis
