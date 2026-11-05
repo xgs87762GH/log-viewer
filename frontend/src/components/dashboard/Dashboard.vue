@@ -12,7 +12,7 @@
         <div class="hero-copy">
           <div class="ui-eyebrow">Log Center / 环境概览</div>
           <h1>{{ envLabel }}</h1>
-          <p>选择级别打开日志聚合，或直达目录与归档。「探测级别」串行请求当前环境各服务目录一次，不自动轮询。</p>
+          <p>选择级别打开日志聚合，或直达目录与归档。「探测级别」会并发探测当前环境各服务目录，不自动轮询。</p>
         </div>
         <div class="hero-actions">
           <span class="ui-eyebrow">当前环境</span>
@@ -118,7 +118,7 @@
           </header>
 
           <div v-if="item.levels.length" class="card-levels">
-            <div v-for="lv in item.levels" :key="lv" class="lv-item">
+            <div v-for="lv in item.levels" :key="lv" class="lv-group">
               <button
                 type="button"
                 class="lv-open"
@@ -126,10 +126,11 @@
                 :title="`打开 ${lv} 日志聚合`"
                 @click="nav.openLog(item.i, lv)"
               >{{ lv }}</button>
+              <span class="lv-sep" aria-hidden="true" />
               <el-tooltip :content="`新标签打开 ${lv} 日志文件`" placement="top" :show-after="400">
                 <a
-                  class="ui-icon-btn"
-                  :href="logs.buildLogUrl(item.svc.host, item.svc.app, lv)"
+                  class="lv-act"
+                  :href="item.levelUrls[lv]"
                   target="_blank"
                   :aria-label="`新标签打开 ${lv} 日志文件`"
                 ><el-icon><Link /></el-icon></a>
@@ -137,7 +138,7 @@
               <el-tooltip content="下载该级别日志文件" placement="top" :show-after="400">
                 <button
                   type="button"
-                  class="ui-icon-btn"
+                  class="lv-act"
                   :disabled="download.active && download.key !== downloadKey(item.svc, lv)"
                   :aria-label="`下载 ${lv} 日志文件`"
                   @click="downloadLevel(item.svc, lv)"
@@ -151,7 +152,7 @@
           </div>
 
           <footer class="card-ft">
-            <a class="ft-link" :href="logs.buildDirUrl(item.svc.host, item.svc.app)" target="_blank">
+            <a class="ft-link" :href="item.dirUrl" target="_blank">
               <el-icon><Folder /></el-icon> 目录
             </a>
             <el-tooltip content="复制全部日志链接" placement="top" :show-after="400">
@@ -160,7 +161,7 @@
                 class="ui-icon-btn"
                 :disabled="!item.levels.length"
                 aria-label="复制全部日志链接"
-                @click="copyUrls(item.svc)"
+                @click="copyUrls(item)"
               ><el-icon><DocumentCopy /></el-icon></button>
             </el-tooltip>
           </footer>
@@ -251,13 +252,23 @@ const envLabel = computed(() => {
   return `${info.icon || ''} ${info.label || nav.env}`.trim()
 })
 
-/** 一次性算好每行的级别与探测状态，模板不再重复调用 composable */
-const serviceRows = computed(() => nav.services.map((svc, i) => ({
-  svc,
-  i,
-  levels: nav.getLevels(svc),
-  probed: !!logs.getIndexMeta(svc.host, svc.app, nav.env),
-})))
+/** 一次性算好级别、探测状态与全部直链（显式 envKey），模板只读结果 */
+const serviceRows = computed(() => nav.services.map((svc, i) => {
+  const envKey = nav.env
+  const levels = nav.getLevels(svc)
+  const levelUrls = {}
+  for (const lv of levels) {
+    levelUrls[lv] = logs.buildLogUrl(svc.host, svc.app, lv, undefined, envKey)
+  }
+  return {
+    svc,
+    i,
+    levels,
+    levelUrls,
+    dirUrl: logs.buildDirUrl(svc.host, svc.app, envKey),
+    probed: !!logs.getIndexMeta(svc.host, svc.app, envKey),
+  }
+}))
 
 const filteredServices = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -323,19 +334,18 @@ async function probeEnv() {
   }
 }
 
-function copyUrls(svc) {
-  const levels = nav.getLevels(svc)
-  if (!levels.length) {
+function copyUrls(item) {
+  const urls = Object.values(item.levelUrls).join('\n')
+  if (!urls) {
     toast.warn('无可复制的级别链接', '请先探测，或该目录无业务日志')
     return
   }
-  const urls = levels.map(lv => logs.buildLogUrl(svc.host, svc.app, lv)).join('\n')
   navigator.clipboard?.writeText(urls).then(() => {
     toast.success('已复制全部日志链接')
     access.track(access.ACTION.COPY_LINKS, {
       env: nav.env,
-      module: svc.module || '',
-      app: svc.app || '',
+      module: item.svc.module || '',
+      app: item.svc.app || '',
     })
   })
 }
@@ -419,6 +429,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: var(--sp-4);
 }
+/* 内容超高时滚动，不能把带 overflow:hidden 的首块压扁导致标题被裁 */
+.dashboard > * { flex-shrink: 0 }
 
 /* ── 顶部品牌区 ── */
 .dash-hero {
@@ -559,25 +571,58 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .card-levels { display: flex; flex-wrap: wrap; gap: var(--sp-2) }
-.lv-item { display: flex; align-items: center; gap: 3px }
-.lv-open {
+/* 每个级别一个分段按钮组：主按钮 + 外链 / 下载，避免散落的小圆按钮 */
+.lv-group {
+  display: inline-flex;
+  align-items: center;
   height: 30px;
-  padding: 0 12px;
-  border-radius: var(--r-sm);
   border: 1px solid var(--bd);
+  border-radius: var(--r-sm);
   background: var(--s2);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.lv-group:hover, .lv-group:focus-within {
+  border-color: color-mix(in srgb, var(--ac) 42%, var(--bd));
+  box-shadow: var(--sh-1);
+}
+.lv-open {
+  height: 100%;
+  min-width: 58px;
+  padding: 0 11px;
+  border: 0;
+  background: transparent;
   color: var(--t1);
   font-family: var(--font-log);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: box-shadow var(--dur) var(--ease);
 }
-.lv-open:hover { transform: translateY(-1px); box-shadow: var(--sh-1) }
-.lv-open.tone-success, .lv-open.tone-primary { color: var(--info); border-color: var(--info-bd); background: var(--info-bg) }
-.lv-open.tone-warning { color: var(--warn); border-color: var(--warn-bd); background: var(--warn-bg) }
-.lv-open.tone-danger { color: var(--err); border-color: var(--err-bd); background: var(--err-bg) }
-.lv-open.tone-info { color: var(--dbg); border-color: var(--dbg-bd); background: var(--dbg-bg) }
+.lv-open:hover { box-shadow: inset 0 0 0 999px var(--surf-hover) }
+.lv-open.tone-success, .lv-open.tone-primary { color: var(--info); background: var(--info-bg) }
+.lv-open.tone-warning { color: var(--warn); background: var(--warn-bg) }
+.lv-open.tone-danger { color: var(--err); background: var(--err-bg) }
+.lv-open.tone-info { color: var(--dbg); background: var(--dbg-bg) }
+.lv-sep { width: 1px; height: 16px; flex: none; background: var(--bd) }
+.lv-act {
+  width: 28px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--t2);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.lv-act:hover { color: var(--ac); background: var(--surf-hover) }
+.lv-act:disabled { opacity: .45; cursor: not-allowed }
+.compact .lv-group { height: 26px }
+.compact .lv-open { min-width: 50px; padding: 0 8px }
+.compact .lv-act { width: 24px }
 .ui-icon-btn { width: 28px; height: 28px; font-size: 13px }
 a.ui-icon-btn { text-decoration: none }
 .card-note {

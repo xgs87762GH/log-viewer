@@ -8,6 +8,8 @@
  * 只需新增一个产生 chunks 的策略并复用 saveChunksAsFile，不改调用方。
  */
 
+import { parseErrorBody } from './apiClient'
+
 const BLOB_MIME = 'application/octet-stream'
 const REVOKE_DELAY_MS = 1000
 
@@ -77,12 +79,7 @@ export async function downloadLogFile(url, opts = {}) {
   const { filename = 'log.txt', signal, onProgress } = opts
   const res = await fetch(url, { signal, cache: 'no-store' })
   if (!res.ok) {
-    let message = `HTTP ${res.status}`
-    try {
-      const body = await res.json()
-      if (body?.error) message = body.error
-    } catch {}
-    throw new Error(message)
+    throw new Error(await parseErrorBody(res))
   }
 
   const total = readTotalSize(res)

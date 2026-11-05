@@ -111,6 +111,7 @@ import {
 } from '@element-plus/icons-vue'
 import { usePresence } from '../../composables/usePresence'
 import { useAccessLog } from '../../composables/useAccessLog'
+import { requestJson, ApiError } from '../../utils/apiClient'
 
 const presence = usePresence()
 const access = useAccessLog()
@@ -125,6 +126,7 @@ const summary = reactive({
 })
 
 let timer = 0
+let refreshAbort = null
 
 function fmtTime(ts) {
   if (!ts) return '—'
@@ -133,32 +135,37 @@ function fmtTime(ts) {
   return d.toLocaleString()
 }
 
-async function fetchJson(path) {
-  const res = await fetch(path)
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-  return data
-}
-
 async function refresh() {
   if (!presence.state.canViewStats) return
+  if (refreshAbort) {
+    try { refreshAbort.abort() } catch {}
+  }
+  const controller = new AbortController()
+  refreshAbort = controller
   loading.value = true
   try {
     const [s, o, r] = await Promise.all([
-      fetchJson('/api/access/summary'),
-      fetchJson('/api/access/online'),
-      fetchJson('/api/access/recent?limit=100'),
+      requestJson('/api/access/summary', { signal: controller.signal }),
+      requestJson('/api/access/online', { signal: controller.signal }),
+      requestJson('/api/access/recent?limit=100', { signal: controller.signal }),
     ])
     Object.assign(summary, s)
     online.value = o.online || []
     recent.value = r.items || []
     if (typeof o.count === 'number') presence.state.onlineCount = o.count
   } catch (e) {
-    if (String(e.message || '').includes('无权') || String(e.message || '').includes('403')) {
+    if (e?.name === 'AbortError' || e?.code === 20) return
+    if (
+      (e instanceof ApiError && e.status === 403) ||
+      /无权|403/.test(String(e.message || ''))
+    ) {
       presence.state.canViewStats = false
     }
   } finally {
-    loading.value = false
+    if (refreshAbort === controller) {
+      loading.value = false
+      refreshAbort = null
+    }
   }
 }
 
@@ -169,7 +176,10 @@ onMounted(() => {
   timer = window.setInterval(refresh, 30000)
 })
 
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  clearInterval(timer)
+  refreshAbort?.abort()
+})
 </script>
 
 <style scoped>

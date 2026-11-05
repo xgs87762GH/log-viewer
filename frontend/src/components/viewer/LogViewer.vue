@@ -258,6 +258,7 @@ const contextConfig = computed(() => settings.getContextConfig())
 
 let loadSeq = 0
 let processSeq = 0
+let loadAbort = null
 let scrollRaf = 0
 let resizeTimer = 0
 const hlCache = new Map()
@@ -502,7 +503,7 @@ watch(
 /**
  * 确保历史文件列表就绪（唯一入口）。
  */
-async function ensureFileList({ force = false, keepSelection = false, hydrate = true } = {}) {
+async function ensureFileList({ force = false, keepSelection = false, hydrate = true, signal } = {}) {
   const svc = nav.currentService
   if (!svc) {
     logFiles.value = []
@@ -534,11 +535,13 @@ async function ensureFileList({ force = false, keepSelection = false, hydrate = 
       force,
       envKey: nav.env,
       soft: !force,
+      signal,
     })
     applyFileList(files, keepSelection || (!force && hydrate))
     refreshIndexHint()
     return files
   } catch (e) {
+    if (logs.isAbortError?.(e)) return logFiles.value
     console.warn('listLogFiles failed:', e.message)
     if (!keepSelection && !logFiles.value.length) {
       logFiles.value = []
@@ -592,6 +595,11 @@ async function loadLog({ skipList = false, force = false } = {}) {
   const svc = nav.currentService
   if (!svc) return
   const seq = ++loadSeq
+  if (loadAbort) {
+    try { loadAbort.abort() } catch {}
+  }
+  const controller = new AbortController()
+  loadAbort = controller
 
   loading.value = true
   error.value = ''
@@ -604,9 +612,10 @@ async function loadLog({ skipList = false, force = false } = {}) {
         force: true,
         envKey: nav.env,
         soft: false,
+        signal: controller.signal,
       })
     } catch (e) {
-      console.warn('pre-discover failed:', e.message)
+      if (!logs.isAbortError?.(e)) console.warn('pre-discover failed:', e.message)
     }
     if (seq !== loadSeq) return
     knownLevels = nav.getLevels(svc)
@@ -638,11 +647,20 @@ async function loadLog({ skipList = false, force = false } = {}) {
   resetViewData()
   try {
     if (!skipList) {
-      ensureFileList({ force: false, keepSelection: true, hydrate: true }).catch(() => {})
+      ensureFileList({
+        force: false,
+        keepSelection: true,
+        hydrate: true,
+        signal: controller.signal,
+      }).catch(() => {})
     }
 
     const filename = selectedFile.value || nav.routeFile || undefined
-    const data = await logs.fetchLog(svc.host, svc.app, requestedLevel, filename, { force })
+    const data = await logs.fetchLog(svc.host, svc.app, requestedLevel, filename, {
+      force,
+      envKey: nav.env,
+      signal: controller.signal,
+    })
     if (seq !== loadSeq) return
     lines.value = data.lines
     size.value = data.size
@@ -688,7 +706,10 @@ async function loadLog({ skipList = false, force = false } = {}) {
     error.value = '加载失败: ' + e.message
     resetViewData()
   } finally {
-    if (seq === loadSeq) loading.value = false
+    if (seq === loadSeq) {
+      loading.value = false
+      loadAbort = null
+    }
   }
   if (seq !== loadSeq) return
   await nextTick()
@@ -867,6 +888,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  loadAbort?.abort()
+  loadAbort = null
   if (unsubIndex) unsubIndex()
   if (unsubSettings) unsubSettings()
   if (onWinResize) window.removeEventListener('resize', onWinResize)

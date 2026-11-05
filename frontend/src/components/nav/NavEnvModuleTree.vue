@@ -22,18 +22,18 @@
 
     <el-scrollbar class="mods-scroll">
       <div
-        v-for="(svc, i) in nav.services"
-        :key="svc.app + i"
+        v-for="(row, i) in rows"
+        :key="row.svc.app + i"
         class="mod-item"
         :class="{ on: nav.selectedIdx === i }"
         @click="nav.selectEnvService(nav.env, i)"
       >
-        <div class="nm">{{ svc.module }}</div>
-        <div class="ip">{{ svc.host }}</div>
+        <div class="nm">{{ row.svc.module }}</div>
+        <div class="ip">{{ row.svc.host }}</div>
         <div v-if="nav.selectedIdx === i" class="lvs" @click.stop>
-          <template v-if="nav.getLevels(svc).length">
+          <template v-if="row.levels.length">
             <el-tag
-              v-for="lv in nav.getLevels(svc)"
+              v-for="lv in row.levels"
               :key="lv"
               size="small"
               :type="levelTagType(lv)"
@@ -43,7 +43,7 @@
             >{{ lv }}</el-tag>
           </template>
           <span
-            v-else-if="logs.getIndexMeta(svc.host, svc.app, nav.env)"
+            v-else-if="row.hasIndex"
             class="lv-empty"
           >无业务级别日志</span>
         </div>
@@ -57,12 +57,23 @@
 /**
  * NavEnvModuleTree —— 二级导航：环境 ElTabs + 模块列表
  */
+import { computed } from 'vue'
 import { useLogs } from '../../composables/useLogs'
 import { useNavigation } from '../../composables/useNavigation'
 import { levelTagType } from '../../constants/logLevels'
 
 const logs = useLogs()
 const nav = useNavigation()
+
+/** 一次算好级别与探测状态，模板不再重复读索引 */
+const rows = computed(() => {
+  void logs.indexVersion
+  return nav.services.map((svc) => ({
+    svc,
+    levels: nav.getLevels(svc),
+    hasIndex: !!logs.getIndexMeta(svc.host, svc.app, nav.env),
+  }))
+})
 
 function tabLabel(key) {
   const env = logs.envs[key]

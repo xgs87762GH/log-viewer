@@ -15,6 +15,55 @@ import { sortFileList } from '../constants/logFileRules.js'
 export const INDEX_STORAGE_KEY = 'log_viewer_file_index_v1'
 
 const listeners = new Set()
+const invalidateListeners = new Set()
+
+/** 模块级 store 快照与按 key memo：避免每次渲染重复 getItem + JSON.parse */
+let storeCache = null
+const entryCache = new Map()
+
+/** @returns {() => void} unsubscribe；跨标签失效时携带变更 key 列表 */
+export function onStoreInvalidate(fn) {
+  invalidateListeners.add(fn)
+  return () => invalidateListeners.delete(fn)
+}
+
+function emitInvalidate(keys) {
+  for (const fn of invalidateListeners) {
+    try {
+      fn(keys)
+    } catch (e) {
+      console.warn('index invalidate listener error:', e)
+    }
+  }
+}
+
+function handleStorageEvent(event) {
+  if (event && event.key && event.key !== INDEX_STORAGE_KEY) return
+  let externalRevision = null
+  if (event?.newValue) {
+    try {
+      const parsed = JSON.parse(event.newValue)
+      if (parsed && typeof parsed === 'object') externalRevision = Number(parsed.revision) || 0
+    } catch {
+      /* 外部写入脏数据也按失效处理 */
+    }
+  }
+  // 只接受比本标签更新的版本，避免旧事件把快照回退
+  if (
+    externalRevision != null &&
+    storeCache &&
+    externalRevision <= (Number(storeCache.revision) || 0)
+  ) return
+  const oldKeys = Object.keys(storeCache?.entries || {})
+  storeCache = null
+  entryCache.clear()
+  const newKeys = Object.keys(readStore().entries || {})
+  emitInvalidate([...new Set([...oldKeys, ...newKeys])])
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', handleStorageEvent)
+}
 
 export function moduleKey(host, app) {
   return `${host}|${app}`
@@ -44,40 +93,73 @@ export function shouldSoftRefresh(entry) {
   return day !== localDayKey()
 }
 
-function readStore() {
-  try {
-    const raw = localStorage.getItem(INDEX_STORAGE_KEY)
-    if (!raw) return { version: 1, entries: {} }
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return { version: 1, entries: {} }
-    return { version: 1, entries: parsed.entries || {} }
-  } catch {
-    return { version: 1, entries: {} }
+function emptyStore() {
+  return { version: 1, revision: 0, entries: {} }
+}
+
+function normalizeStore(parsed) {
+  if (!parsed || typeof parsed !== 'object') return emptyStore()
+  return {
+    version: 1,
+    revision: Number(parsed.revision) || 0,
+    entries: parsed.entries && typeof parsed.entries === 'object' ? parsed.entries : {},
   }
 }
 
-function writeStore(store) {
+function readStore() {
+  if (storeCache) return storeCache
+  let store = emptyStore()
   try {
-    localStorage.setItem(INDEX_STORAGE_KEY, JSON.stringify(store))
+    const raw = localStorage.getItem(INDEX_STORAGE_KEY)
+    if (raw) store = normalizeStore(JSON.parse(raw))
+  } catch {
+    /* 损坏或不可用的本地存储按空快照处理 */
+  }
+  storeCache = store
+  return store
+}
+
+function writeStore(store) {
+  const next = {
+    version: 1,
+    revision: (Number(store?.revision) || 0) + 1,
+    entries: { ...(store?.entries || {}) },
+  }
+  try {
+    localStorage.setItem(INDEX_STORAGE_KEY, JSON.stringify(next))
   } catch (e) {
-    console.warn('persist log file index failed:', e.message)
+    console.warn('persist log file index failed:', e?.message || String(e))
+  }
+  storeCache = next
+  entryCache.clear()
+  return next
+}
+
+function normalizeEntry(key) {
+  const raw = readStore().entries[key]
+  if (!raw || !raw.archives) return null
+  const updatedAt = raw.updatedAt || 0
+  return {
+    levels: raw.levels || [],
+    files: raw.files || {},
+    archives: raw.archives || {},
+    ruleId: raw.ruleId,
+    updatedAt,
+    refreshedDay: raw.refreshedDay || (updatedAt ? localDayKey(updatedAt) : ''),
+    fileCount: raw.fileCount || 0,
   }
 }
 
 export function loadEntry(key, ruleId) {
-  const entry = readStore().entries[key]
-  if (!entry || !entry.archives) return null
-  if (ruleId && entry.ruleId && entry.ruleId !== ruleId) return null
-  const updatedAt = entry.updatedAt || 0
-  return {
-    levels: entry.levels || [],
-    files: entry.files || {},
-    archives: entry.archives || {},
-    ruleId: entry.ruleId,
-    updatedAt,
-    refreshedDay: entry.refreshedDay || (updatedAt ? localDayKey(updatedAt) : ''),
-    fileCount: entry.fileCount || 0,
+  let entry = entryCache.get(key)
+  if (entry === undefined) {
+    entry = normalizeEntry(key)
+    entryCache.set(key, entry)
   }
+  if (!entry) return null
+  if (ruleId && entry.ruleId && entry.ruleId !== ruleId) return null
+  // 浅拷贝：调用方可能交给 Vue reactive 包装，不能污染快照
+  return { ...entry }
 }
 
 export function saveEntry(key, entry) {

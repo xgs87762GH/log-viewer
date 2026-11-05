@@ -1,4 +1,5 @@
 import { usePresence } from './usePresence'
+import { requestJson } from '../utils/apiClient'
 
 /**
  * useAccessLog —— 访问埋点（不碰 DOM）
@@ -27,12 +28,8 @@ function track(action, payload = {}) {
     level: payload.level || '',
     detail: payload.detail || '',
   }
-  // fire-and-forget
-  fetch('/api/access/event', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).catch(() => {})
+  // fire-and-forget：失败静默，不阻塞交互
+  requestJson('/api/access/event', { method: 'POST', body }).catch(() => {})
 }
 
 const instance = { track, ACTION }

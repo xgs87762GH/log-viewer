@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { requestJson, isAbortError } from '../utils/apiClient'
 
 /**
  * usePresence —— 会话心跳（在线）
@@ -17,26 +18,18 @@ const state = reactive({
 })
 
 let pingTimer = 0
+let controller = null
 
-async function post(path, body) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body || {}),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-  return data
+function post(path, body) {
+  return requestJson(path, { method: 'POST', body, signal: controller?.signal })
 }
 
-async function get(path) {
-  const res = await fetch(path)
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-  return data
+function get(path) {
+  return requestJson(path, { signal: controller?.signal })
 }
 
 async function start() {
+  controller = new AbortController()
   try {
     const me = await get('/api/access/me')
     state.enabled = me.enabled !== false
@@ -57,7 +50,7 @@ async function start() {
     state.ready = true
     schedulePing()
   } catch (e) {
-    state.error = e.message
+    if (!isAbortError(e)) state.error = e.message
     state.ready = true
   }
 }
@@ -82,6 +75,10 @@ function schedulePing() {
 function stop() {
   clearInterval(pingTimer)
   pingTimer = 0
+  if (controller) {
+    controller.abort()
+    controller = null
+  }
 }
 
 const instance = { state, start, stop }
