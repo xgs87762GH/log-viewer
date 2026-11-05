@@ -132,6 +132,22 @@ Proxy Basic Auth：根目录 `.env`（见 `.env.example`）或环境变量 `LOG_
 提示：配置上限 vs 已加载数据边界——`fetchLog` 只拉尾部，更早的行不在内存里，
 本期不联网补拉（按字节区间拉取列为二期）。
 
+## Design system
+
+现代观感由两层构成，组件不直接写死视觉参数：
+
+- `styles/global.css`：静态 token（圆角 `--r-*`、间距 `--sp-*`、动效 `--dur` / `--ease`、
+  阴影层级 `--sh-*`）、Element Plus 桥接、滚动条与全局焦点环，以及可复用原子类
+  （`.ui-surface` / `.ui-kpi` / `.ui-chip` / `.ui-icon-btn` / `.ui-empty` /
+  `.ui-toolbar-group` / `.ui-eyebrow`）。基准圆角 `--r` 为 12px。
+- `useSettings.apply()`：按主题派生阴影强度、顶边高光 `--hi`、渐变
+  `--grad-accent` / `--grad-surface` / `--grad-glow`、焦点环 `--ring` 与悬停表面
+  `--surf-*`，并覆盖 Element Plus 的圆角 / 阴影 / 过渡变量。明亮主题用浅色投影，
+  暗黑与暖色用深色投影，暖色高光偏琥珀；日志区仍保持独立深色色板。
+
+三套主题共用同一套语义 token，新增组件只引用 token 即可自动适配；
+`frontend/tests/designTokens.test.js` 校验色板完整性、token 的 CSS fallback 与运行时注入。
+
 ## Settings (browser localStorage)
 
 Key: `log_viewer_settings`

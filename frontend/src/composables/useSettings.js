@@ -83,6 +83,7 @@ function apply() {
   const c = cfg.colors
   const themeKey = THEMES[cfg.theme] ? cfg.theme : 'custom'
   const log = LOG_PALETTES[themeKey] || LOG_PALETTES.dark
+  const dark = themeKey !== 'light'
 
   const level = { info: c.info, warn: c.warn, err: c.err, dbg: c.dbg, trc: c.trc }
   const levelVars = {}
@@ -91,16 +92,42 @@ function apply() {
     levelVars[`--${k}-bd`] = withAlpha(hex, 0.28)
   }
 
+  // 主题感知的表面效果：阴影强度、顶边高光、渐变与焦点环按明暗分别派生，
+  // 组件只消费语义 token，不再各自写死 rgba / px。
+  const surface = dark
+    ? {
+        '--sh-1': `0 1px 2px ${withAlpha('#000000', 0.4)}, 0 4px 14px ${withAlpha('#000000', 0.22)}`,
+        '--sh-2': `0 8px 24px ${withAlpha('#000000', 0.34)}, 0 20px 44px ${withAlpha('#000000', 0.2)}`,
+        '--sh-3': `0 24px 64px ${withAlpha('#000000', 0.5)}`,
+        '--hi': themeKey === 'warm' ? 'rgba(255,228,190,.09)' : 'rgba(255,255,255,.075)',
+        '--grad-surface': `linear-gradient(160deg, ${withAlpha('#ffffff', 0.05)} 0%, ${withAlpha(c.ac, 0.03)} 100%)`,
+        '--grad-glow': `radial-gradient(1100px 420px at 12% -12%, ${withAlpha(c.ac, 0.16)}, transparent 70%)`,
+        '--ring': withAlpha(c.ac, 0.32),
+      }
+    : {
+        '--sh-1': `0 1px 2px ${withAlpha('#1f2328', 0.06)}, 0 3px 10px ${withAlpha('#1f2328', 0.05)}`,
+        '--sh-2': `0 6px 18px ${withAlpha('#1f2328', 0.1)}, 0 16px 36px ${withAlpha('#1f2328', 0.07)}`,
+        '--sh-3': `0 20px 56px ${withAlpha('#1f2328', 0.2)}`,
+        '--hi': 'rgba(255,255,255,.92)',
+        '--grad-surface': `linear-gradient(160deg, ${withAlpha('#ffffff', 0.92)} 0%, ${withAlpha(c.ac, 0.035)} 100%)`,
+        '--grad-glow': `radial-gradient(1100px 420px at 12% -12%, ${withAlpha(c.ac, 0.12)}, transparent 70%)`,
+        '--ring': withAlpha(c.ac, 0.24),
+      }
+  surface['--grad-accent'] = `linear-gradient(135deg, ${c.ac}, ${c.ac2})`
+  surface['--surf-hover'] = withAlpha(c.ac, 0.07)
+  surface['--surf-active'] = withAlpha(c.ac, 0.13)
+
   const vars = {
     '--bg': c.bg, '--s1': c.s1, '--s2': c.s2, '--bd': c.bd, '--bd2': c.bd2,
     '--t1': c.t1, '--t2': c.t2, '--t3': c.t3,
     '--ac': c.ac, '--ac2': c.ac2,
     '--info': c.info, '--warn': c.warn, '--err': c.err, '--dbg': c.dbg, '--trc': c.trc,
     ...levelVars,
+    ...surface,
     '--font-ui': cfg.fonts.ui, '--font-log': cfg.fonts.log,
     '--fs-base': cfg.sizes.base, '--fs-log': cfg.sizes.log, '--lh-log': cfg.sizes.lh,
 
-    // Element Plus：把组件表面/文字/边框接到当前主题，消除冷暖割裂
+    // Element Plus：表面 / 文字 / 边框 / 圆角 / 阴影 / 过渡统一接到当前主题
     '--el-color-primary': c.ac,
     '--el-color-primary-dark-2': mixHex(c.ac, '#000000', 0.2),
     '--el-color-primary-light-3': mixHex(c.ac, c.bg, 0.35),
@@ -125,9 +152,15 @@ function apply() {
     '--el-fill-color-blank': c.s1,
     '--el-fill-color-dark': mixHex(c.s2, '#000000', 0.15),
     '--el-fill-color-darker': mixHex(c.s2, '#000000', 0.25),
-    '--el-mask-color': withAlpha('#000000', themeKey === 'light' ? 0.4 : 0.55),
-    '--el-box-shadow': `0 8px 24px ${withAlpha('#000000', 0.28)}`,
-    '--el-box-shadow-light': `0 4px 12px ${withAlpha('#000000', 0.18)}`,
+    '--el-mask-color': withAlpha('#000000', dark ? 0.55 : 0.4),
+    '--el-box-shadow': surface['--sh-3'],
+    '--el-box-shadow-light': surface['--sh-2'],
+    '--el-box-shadow-lighter': surface['--sh-1'],
+    '--el-border-radius-base': '10px',
+    '--el-border-radius-small': '7px',
+    '--el-border-radius-round': '999px',
+    '--el-transition-duration': '.2s',
+    '--el-transition-duration-fast': '.12s',
 
     // 日志区
     '--log-bg': log.bg,
@@ -142,7 +175,6 @@ function apply() {
 
   for (const [k, v] of Object.entries(vars)) style.setProperty(k, v)
 
-  const dark = themeKey !== 'light'
   root.classList.toggle('dark', dark)
   root.classList.toggle('theme-warm', themeKey === 'warm')
   root.classList.toggle('theme-dark', themeKey === 'dark')

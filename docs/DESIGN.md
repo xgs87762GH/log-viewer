@@ -103,6 +103,13 @@ App shell
   `loading === false` and DOM painted.
 - Toolbar 不做级别二次过滤（文件已按 level 区分）；正文用文本过滤条。
 - 行操作项 hover 才出现，**绝不撑开行高**（`.ln` 为 flex + `overflow:hidden`）。
+- 设计令牌唯一来源：`styles/global.css`（静态 fallback / UI 原子类 / Element Plus 桥接）
+  + `useSettings.apply()`（按主题派生阴影、渐变、高光、焦点环并注入 EP 变量）。
+- 组件只消费语义 token（`--r*` / `--sp*` / `--sh*` / `--grad-*` / `--surf-*` / `--dur`），
+  **不得写死颜色、圆角、阴影与过渡时长**；新增表面效果先加 token。
+- 可复用 UI 原子类在 `global.css`：`.ui-surface` / `.ui-kpi` / `.ui-chip` /
+  `.ui-icon-btn` / `.ui-empty` / `.ui-toolbar-group` / `.ui-eyebrow`；scoped 组件可直接引用。
+- Icon-only 控件必须同时有 `el-tooltip` 与 `aria-label`；所有交互元素保留 `focus-visible`。
 
 ## Change checklist
 
