@@ -147,7 +147,9 @@ log-viewer/
 
 - **Composables**：业务状态在 `useLogs` / `useNavigation` / `useSettings` 等模块单例中
 - **代理**：`GET /api/proxy?url=&tail=`，服务端 Range 拉尾部并分块回写
-- **性能**：虚拟列表、请求 Abort、正文短期缓存、视图 keep-alive、异步分包、大日志 Worker
+- **下载**：`GET /api/download?url=&file=`，整文件流式转发；前端分片读取 + Blob 保存，带进度且可取消
+- **上下文**：点日志行或 hover 操作项打开弹窗，前后行懒加载（筛选 / 未筛选状态均可）
+- **性能**：虚拟列表、请求 Abort、正文短期缓存、视图 keep-alive、异步分包、大日志 Worker 常驻数据 + 增量查询
 - **主题**：CSS 变量 + Element Plus 映射，设置即时生效
 
 ---

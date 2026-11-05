@@ -19,13 +19,20 @@ unless proxy/config API must change.
 | `utils` | 纯函数引擎 / 持久化 / 解析 | Vue / 业务编排副作用 |
 | `constants/logHighlightRules.js` | 日志着色规则唯一配置 | 渲染 / 过滤逻辑 |
 | `constants/logFileRules.js` | 日志**文件名**匹配规则唯一配置 | 网络请求 / UI |
+| `constants/logContextConfig.js` | 上下文默认值 / 区间 / 夹紧 | Vue / HTTP |
 | `constants/themes.js` | 主题 / 日志区色板 | DOM 写入 |
 | `utils/logParser.js` | 执行着色规则的引擎 | 内嵌业务正则（应写在 rules） |
 | `utils/logFileIndex.js` | 文件名索引：持久化 / 按日刷新 / 合并 | HTTP / Vue / UI |
-| `utils/logEntries.js` | 条目归并 / 文本过滤 | Vue |
+| `utils/logEntries.js` | 条目归并 / 文本过滤 / 搜索索引 | Vue |
 | `utils/logViewRows.js` | 折叠展平 / 视觉行估算 | Vue |
+| `utils/logContextWindow.js` | 上下文窗口推进（含双边界判定） | Vue / DOM / 网络 |
+| `utils/logDownload.js` | 分片流式读取 + Blob 落盘机制 | URL 构造 / 埋点 / toast |
+| `utils/logFilterMatch.js` | 过滤匹配与条件预编译 | Vue |
+| `utils/logProcessClient.js` | Worker 命令协议与同步回退 | Vue |
 | `utils/dirListing.js` | 目录 HTML 抽文件名 | 命名规则 |
 | `utils/color.js` | 色混合 / alpha | DOM |
+| `workers/logProcess.worker.js` | 常驻 lines / 条目 / 索引；按 query 出 viewRows | DOM / Vue |
+| `components/viewer/LogContextDialog.vue` | 上下文弹窗渲染 + 懒加载交互 | 直接请求日志 / 修改 lines |
 
 ## Composables = single source of truth
 
@@ -46,13 +53,19 @@ unless proxy/config API must change.
 - 正文过滤：`useLogViewFilters` + `components/viewer/LogFilterBar`
   （Grafana 风格芯片：∋ 包含 / ≠ 排除，多条件 AND；整条日志匹配）。
 - `useSettings`: cfg 持久化 + `apply` 写 CSS 变量；色板来自 `constants/themes`。
+- 下载 URL 只由 `useLogs.buildDownloadUrl` 构造（同源 `/api/download`）；
+  **组件不得直连 LogIndex**，仪表盘下载按钮走 `useLogs.downloadLogFile`。
+- 上下文弹窗的数据源是原始 `lines`，锚点是 `row.idx`；**不得**取过滤后的
+  `viewRows`，否则筛选状态下看不到被隐藏的周边行。
+- Worker 协议：`setLines` 仅在 lines 引用变化时发送，`query` 携带条件与展示参数；
+  两端保持 `viewRows` / `filteredRowCount` 结构一致，同步回退路径同构。
 
 ## Feature folders under `components/`
 
 ```
 components/
   nav/         # L1 / L2 导航
-  viewer/      # LogViewer + LogFilterBar
+  viewer/      # LogViewer + LogFilterBar + LogContextDialog + LogFoldBar
   dashboard/   # Dashboard
   stats/       # AccessStats
   settings/    # SettingsModal
@@ -89,6 +102,7 @@ App shell
 - Loading: newest request wins (sequence token); scroll-to-end only **after**
   `loading === false` and DOM painted.
 - Toolbar 不做级别二次过滤（文件已按 level 区分）；正文用文本过滤条。
+- 行操作项 hover 才出现，**绝不撑开行高**（`.ln` 为 flex + `overflow:hidden`）。
 
 ## Change checklist
 
@@ -99,6 +113,8 @@ App shell
 5. Keep comments short; explain **why** / boundaries, not narrate code.
 6. Update `docs/SYSTEM.md` if architecture or nav hierarchy changes.
 7. New pure algorithm? → `utils/`；new 可扩展规则? → `constants/`。
+8. Verify: `cd frontend && npm run build`、`python -m py_compile server.py`、
+   `node --test "frontend/tests/*.test.js"`、`node frontend/tests/bench-filter.mjs`。
 
 ## Anti-patterns
 
@@ -107,3 +123,5 @@ App shell
 - Mixing L1 view switch and L2 env/module tree in one giant template without split.
 - Silent hard caps that ignore user settings (document or expose in Settings).
 - Putting theme palettes / HTML directory parsing inside composables.
+- Treating filtered `viewRows` as the data source for log context.
+- Sending the whole `lines` array to the Worker on every filter change.
