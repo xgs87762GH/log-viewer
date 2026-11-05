@@ -29,6 +29,8 @@ DEFAULT_PASS = (
 CONFIG_DIR = os.path.join(HERE, 'config')
 DIST_DIR = os.path.join(HERE, 'frontend', 'dist')
 _PROXY_CHUNK = 64 * 1024
+# 整文件下载与目录探测共用 opener，但探测的 8s 超时不适用于大文件
+DOWNLOAD_TIMEOUT_SEC = 300
 
 
 def read_version():
@@ -72,6 +74,14 @@ def _client_ip(handler):
     return ip
 
 
+def _safe_download_name(raw, url):
+    """附件名只取 basename，剥离路径与控制字符，防响应头注入。"""
+    name = raw or os.path.basename(urllib.parse.urlparse(url).path) or ''
+    name = str(name).replace('\\', '/').split('/')[-1]
+    name = ''.join(ch for ch in name if ch.isprintable() and ch not in '\r\n"')
+    return name[:180] or 'log.txt'
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     """单进程：API/config + 静态前端（frontend/dist）。无需 Nginx。"""
 
@@ -103,6 +113,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if parsed.path == '/api/proxy':
             self.handle_proxy(parsed.query)
+            return
+
+        # 必须早于下方 SPA fallback，否则会被改写成 index.html（200 HTML）
+        if parsed.path == '/api/download':
+            self.handle_download(parsed.query)
             return
 
         if parsed.path == '/api/access/online':
@@ -271,6 +286,70 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             self.json_err(502, str(e))
 
+    def handle_download(self, query):
+        """整文件下载：带 Basic 凭据直连 LogIndex，按块流式转发为附件。
+
+        与 handle_proxy 隔离：目录探测的 8s 超时不适用于大文件，
+        且这里需要 Content-Disposition 与独立的错误语义。
+        """
+        params = urllib.parse.parse_qs(query)
+        url = params.get('url', [None])[0]
+        if not url:
+            self.json_err(400, 'Missing url parameter')
+            return
+
+        name = _safe_download_name(params.get('file', [None])[0], url)
+        user = params.get('user', [DEFAULT_USER])[0]
+        passwd = params.get('pass', [DEFAULT_PASS])[0]
+
+        req = urllib.request.Request(url)
+        if user:
+            cred = base64.b64encode('{}:{}'.format(user, passwd).encode()).decode()
+            req.add_header('Authorization', 'Basic {}'.format(cred))
+
+        headers_sent = False
+        try:
+            with _LOGINDEX_OPENER.open(req, timeout=DOWNLOAD_TIMEOUT_SEC) as resp:
+                cl_hdr = resp.headers.get('Content-Length')
+                total = int(cl_hdr) if cl_hdr and cl_hdr.isdigit() else None
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/octet-stream')
+                self.send_header(
+                    'Content-Disposition',
+                    "attachment; filename*=UTF-8''" + urllib.parse.quote(name, safe=''),
+                )
+                self.send_header(
+                    'Access-Control-Expose-Headers',
+                    'X-Total-Size, Content-Disposition',
+                )
+                if total is not None:
+                    self.send_header('Content-Length', str(total))
+                    self.send_header('X-Total-Size', str(total))
+                self.end_headers()
+                headers_sent = True
+
+                while True:
+                    chunk = resp.read(_PROXY_CHUNK)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            # 前端取消或连接断开：属正常路径，无需回错误体
+            return
+        except urllib.error.HTTPError as e:
+            if not headers_sent:
+                self.json_err(e.code, 'LogIndex returned HTTP {}'.format(e.code))
+        except urllib.error.URLError as e:
+            if not headers_sent:
+                self.json_err(
+                    502,
+                    '无法直连 LogIndex（已绕过系统代理）: {}'.format(e.reason),
+                )
+        except Exception as e:
+            # 头已发出后只能断开连接；前端会按 Content-Length 检测出不完整下载
+            if not headers_sent:
+                self.json_err(502, str(e))
+
     # ── access / presence ─────────────────────────────────
 
     def _require_stats_ip(self):
@@ -361,7 +440,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         path = str(args[0]) if args else ''
-        if '/api/proxy' in path or '/config/' in path or '/api/access/ping' in path:
+        if any(p in path for p in ('/api/proxy', '/api/download', '/config/', '/api/access/ping')):
             return
         super().log_message(fmt, *args)
 

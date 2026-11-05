@@ -24,6 +24,17 @@
             {{ logs.envs[key]?.icon || '' }} {{ logs.envs[key]?.label || key }}
           </el-radio-button>
         </el-radio-group>
+        <div v-if="download.active" class="dl-status">
+          <span class="dl-label" :title="download.label">下载中 {{ download.label }}</span>
+          <el-progress
+            :percentage="download.percent"
+            :stroke-width="6"
+            :show-text="false"
+            class="dl-progress"
+          />
+          <span class="dl-size">{{ fmtBytes(download.received) }}<template v-if="download.total"> / {{ fmtBytes(download.total) }}</template></span>
+          <el-button size="small" type="danger" plain @click="cancelDownload">取消</el-button>
+        </div>
       </div>
       <p class="dash-desc">
         选择级别打开日志聚合，或使用外链 / 目录直达 LogIndex。
@@ -63,6 +74,14 @@
                     target="_blank"
                     :title="'新标签打开 ' + lv"
                   >↗</el-button>
+                  <el-button
+                    size="small"
+                    :icon="Download"
+                    :loading="download.active && download.key === downloadKey(svc, lv)"
+                    :disabled="download.active && download.key !== downloadKey(svc, lv)"
+                    :title="'下载 ' + lv + ' 日志文件'"
+                    @click="downloadLevel(svc, lv)"
+                  />
                 </el-button-group>
                 <el-button size="small" :icon="DocumentCopy" @click="copyUrls(svc)" title="复制全部链接" />
               </template>
@@ -99,8 +118,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { Loading, DocumentCopy } from '@element-plus/icons-vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { Loading, DocumentCopy, Download } from '@element-plus/icons-vue'
 import { useLogs } from '../../composables/useLogs'
 import { useNavigation } from '../../composables/useNavigation'
 import { useToast } from '../../composables/useToast'
@@ -112,6 +131,18 @@ const nav = useNavigation()
 const toast = useToast()
 const access = useAccessLog()
 const probing = ref(false)
+
+/** 单一下载任务：进度、标签与当前 key 都归仪表盘本地，不进全局 store */
+const download = reactive({
+  active: false,
+  key: '',
+  label: '',
+  received: 0,
+  total: 0,
+  percent: 0,
+})
+let downloadAbort = null
+let lastProgressAt = 0
 
 const envLabel = computed(() => {
   const info = nav.currentEnvInfo
@@ -171,6 +202,70 @@ function copyUrls(svc) {
     })
   })
 }
+
+function downloadKey(svc, lv) {
+  return `${svc.host}|${svc.app}|${lv}`
+}
+
+function fmtBytes(n) {
+  const b = Number(n) || 0
+  if (b < 1024) return `${b} B`
+  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`
+  return `${(b / 1048576).toFixed(1)} MB`
+}
+
+async function downloadLevel(svc, lv) {
+  if (download.active) return
+  const controller = new AbortController()
+  downloadAbort = controller
+  Object.assign(download, {
+    active: true,
+    key: downloadKey(svc, lv),
+    label: `${svc.module || svc.app} · ${lv}`,
+    received: 0,
+    total: 0,
+    percent: 0,
+  })
+  lastProgressAt = 0
+  try {
+    const { filename, size } = await logs.downloadLogFile(svc.host, svc.app, lv, undefined, {
+      envKey: nav.env,
+      signal: controller.signal,
+      onProgress: (received, total) => {
+        // 64KB 一片，进度回流很密；节流后再写响应式状态
+        const now = Date.now()
+        if (now - lastProgressAt < 100) return
+        lastProgressAt = now
+        download.received = received
+        download.total = total
+        download.percent = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0
+      },
+    })
+    toast.success('下载完成', `${filename}（${fmtBytes(size)}）`)
+    access.track(access.ACTION.DOWNLOAD_LOG, {
+      env: nav.env,
+      module: svc.module || '',
+      app: svc.app || '',
+      level: lv,
+      detail: filename,
+    })
+  } catch (e) {
+    if (e?.name === 'AbortError') toast.warn('下载已取消')
+    else toast.error('下载失败', e?.message || String(e))
+  } finally {
+    download.active = false
+    download.key = ''
+    downloadAbort = null
+  }
+}
+
+function cancelDownload() {
+  downloadAbort?.abort()
+}
+
+onBeforeUnmount(() => {
+  downloadAbort?.abort()
+})
 </script>
 
 <style scoped>
@@ -198,6 +293,18 @@ function copyUrls(svc) {
 .mro-links { display: flex; flex-direction: column; gap: 8px }
 .mro-a { justify-content: flex-start; font-size: 13px }
 .mro-tag { margin-right: 8px }
+
+.dl-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 12px;
+  color: var(--t2);
+}
+.dl-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.dl-progress { flex: 1 1 160px; min-width: 120px }
+.dl-size { flex-shrink: 0; font-variant-numeric: tabular-nums }
 
 .loading {
   display: flex;

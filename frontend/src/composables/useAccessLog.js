@@ -11,6 +11,8 @@ const ACTION = {
   VIEW_LOG: 'view_log',
   SWITCH_ENV: 'switch_env',
   COPY_LINKS: 'copy_links',
+  DOWNLOAD_LOG: 'download_log',
+  SHOW_CONTEXT: 'show_context',
 }
 
 function track(action, payload = {}) {

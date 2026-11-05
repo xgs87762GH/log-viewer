@@ -6,6 +6,7 @@ import {
   formatActiveName,
 } from '../constants/logFileRules'
 import { extractLogNamesFromDirHtml } from '../utils/dirListing'
+import { downloadLogFile as streamDownload } from '../utils/logDownload'
 import {
   moduleKey,
   shouldSoftRefresh,
@@ -122,6 +123,28 @@ function buildLogUrl(host, app, level, filename, envKey) {
 function buildDirUrl(host, app, envKey) {
   const { prefix } = resolveServiceUrlParts(host, app, envKey)
   return `${prefix}/`
+}
+
+/**
+ * 整文件下载走独立端点：超时、附件头与错误处理都和 tail 探测不同。
+ * envKey 显式传入，避免 findService 跨环境匹配同名 host/app 选错 baseUrl。
+ */
+function buildDownloadUrl(host, app, level, filename, envKey) {
+  const url = buildLogUrl(host, app, level, filename, envKey)
+  const params = new URLSearchParams({ url })
+  const name = url.split('/').pop()
+  if (name) params.set('file', name)
+  return `/api/download?${params.toString()}`
+}
+
+function downloadLogFile(host, app, level, filename, opts = {}) {
+  const { envKey, ...downloadOpts } = opts
+  const url = buildLogUrl(host, app, level, filename, envKey)
+  const name = filename || url.split('/').pop() || `${level}.log`
+  return streamDownload(buildDownloadUrl(host, app, level, filename, envKey), {
+    ...downloadOpts,
+    filename: name,
+  })
 }
 
 function hydrateFromStore(key, rule) {
@@ -483,7 +506,9 @@ const instance = Object.assign(state, {
   peekLogFiles,
   buildLogUrl,
   buildDirUrl,
+  buildDownloadUrl,
   fetchLog,
+  downloadLogFile,
   clearLogBodyCache,
   discoverLevels,
   discoverEnvLevels,
