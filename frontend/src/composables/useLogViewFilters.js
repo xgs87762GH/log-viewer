@@ -161,6 +161,11 @@ function matchTextFilters(blob) {
   return matchBlobFilters(blob, includeTerms.value, excludeTerms.value)
 }
 
+/** 导入 filterHistory 段后调用：过滤历史从 localStorage 重新读取 */
+function reload() {
+  filterHistory.value = loadFilterHistory()
+}
+
 export function useLogViewFilters() {
   return {
     textFilters,
@@ -178,5 +183,6 @@ export function useLogViewFilters() {
     parseFilterInput,
     matchTextFilters,
     matchBlobFilters,
+    reload,
   }
 }

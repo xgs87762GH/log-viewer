@@ -11,8 +11,9 @@ import { useAccessLog } from './useAccessLog'
  * 刷新 / 分享链接可还原；用 app(+host) 定位模块，避免 idx 漂移。
  */
 
-const L1_KEY = 'log_viewer_nav_l1_collapsed'
-const L2_KEY = 'log_viewer_nav_l2_collapsed'
+import { NAV_L1_KEY, NAV_L2_KEY } from '../constants/storageKeys.js'
+const L1_KEY = NAV_L1_KEY
+const L2_KEY = NAV_L2_KEY
 const VIEWS = new Set(['dashboard', 'viewer', 'stats', 'settings'])
 
 const state = reactive({
@@ -136,6 +137,11 @@ function initUrlSync() {
   })
 }
 
+function reload() {
+  state.navL1Collapsed = localStorage.getItem(L1_KEY) === '1'
+  state.navL2Collapsed = localStorage.getItem(L2_KEY) === '1'
+}
+
 function setView(view) {
   if (!VIEWS.has(view) || view === state.view) return
   state.view = view
@@ -229,6 +235,7 @@ const instance = Object.assign(state, {
   setLevel,
   setRouteFile,
   initUrlSync,
+  reload,
 })
 
 export function useNavigation() {

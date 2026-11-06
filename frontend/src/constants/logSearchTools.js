@@ -7,7 +7,8 @@
 export const FIND_DEBOUNCE_MS = 120
 
 /** 抽屉固定状态持久化 key（与既有 localStorage key 不冲突） */
-export const DRAWER_STORAGE_KEY = 'log_viewer_tools_drawer_v1'
+import { DRAWER_STORAGE_KEY } from './storageKeys.js'
+export { DRAWER_STORAGE_KEY }
 
 export const FILTER_HIGHLIGHT_CLASS = 'hit'
 export const USER_HIGHLIGHT_CLASS = 'hl'

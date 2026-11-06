@@ -26,6 +26,7 @@ import { useNavigation } from './composables/useNavigation'
 import { setupPresenceLifecycle } from './composables/usePresence'
 import NavPrimary from './components/nav/NavPrimary.vue'
 import NavSecondary from './components/nav/NavSecondary.vue'
+import { SETTINGS_INIT_FLAG_KEY } from './constants/storageKeys.js'
 
 const Dashboard = defineAsyncComponent(() => import('./components/dashboard/Dashboard.vue'))
 const AccessStats = defineAsyncComponent(() => import('./components/stats/AccessStats.vue'))
@@ -48,8 +49,8 @@ const configReady = logs.loadConfig().catch(err => console.error('加载配置�
 
 onMounted(async () => {
   setupPresenceLifecycle()
-  if (!localStorage.getItem('log_viewer_settings_init')) {
-    localStorage.setItem('log_viewer_settings_init', 'true')
+  if (!localStorage.getItem(SETTINGS_INIT_FLAG_KEY)) {
+    localStorage.setItem(SETTINGS_INIT_FLAG_KEY, 'true')
   }
   settings.apply()
   await configReady

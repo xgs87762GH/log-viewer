@@ -6,7 +6,7 @@ import { requestJson, isAbortError } from '../utils/apiClient'
  * sid 存 sessionStorage；页面存活期间定时 ping。
  */
 
-const SID_KEY = 'log_viewer_access_sid'
+import { ACCESS_SID_KEY as SID_KEY } from '../constants/storageKeys.js'
 const state = reactive({
   sid: sessionStorage.getItem(SID_KEY) || '',
   ip: '',

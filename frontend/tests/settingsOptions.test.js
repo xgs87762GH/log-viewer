@@ -12,16 +12,15 @@ import {
 
 const readSrc = (p) => readFileSync(new URL(p, import.meta.url), 'utf8')
 
-test('分区配置 id 唯一，三个受控分区组件都存在', () => {
+test('分区配置 id 唯一，声明的分区组件都存在', () => {
   const ids = SETTINGS_SECTIONS.map((s) => s.id)
-  assert.deepEqual(ids, ['appearance', 'typography', 'behavior'])
+  assert.deepEqual(ids, ['appearance', 'typography', 'behavior', 'config'])
   assert.equal(new Set(ids).size, ids.length)
   for (const s of SETTINGS_SECTIONS) {
-    assert.ok(s.label && s.title && s.desc && s.hint && s.icon, `${s.id} 字段完整`)
-    const name = `Settings${s.id[0].toUpperCase()}${s.id.slice(1)}.vue`
+    assert.ok(s.label && s.title && s.desc && s.hint && s.icon && s.component, `${s.id} 字段完整`)
     assert.ok(
-      existsSync(new URL(`../src/components/settings/${name}`, import.meta.url)),
-      `${name} 分区组件存在`,
+      existsSync(new URL(`../src/components/settings/${s.component}.vue`, import.meta.url)),
+      `${s.component}.vue 分区组件存在`,
     )
   }
 })
@@ -77,6 +76,8 @@ test('设置页保留草稿提交 / 激活重取语义与视图注册', () => {
   assert.ok(page.includes('settings.commit(snapshot(draft))'))
   assert.ok(page.includes('onActivated('), '切回页面应重取草稿')
   assert.ok(page.includes('IntersectionObserver'), '分区锚点高亮')
+  assert.ok(page.includes('sectionComponents[s.component]'), '分区按常量动态挂载')
+  assert.ok(!page.includes("s.id === 'config'"), '不再按 id 硬编码分区分支')
   assert.ok(!page.includes('activeElement.blur()'), '不再使用 DOM 失焦 hack')
 
   const appearance = readSrc('../src/components/settings/SettingsAppearance.vue')

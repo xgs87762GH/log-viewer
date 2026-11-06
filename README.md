@@ -2,20 +2,22 @@
 
 内网日志浏览工具：本地 Python 代理通过 HTTP Range 拉取 LogIndex（或兼容服务）的日志尾部，Vue 3 前端提供仪表盘、日志聚合、访问统计与设置。**日志正文只存在于浏览器内存，不落盘。**
 
-- 当前版本 `1.0.2`（[`VERSION`](VERSION)）
+- 当前版本 `1.0.3`（[`VERSION`](VERSION)）
 - 仓库：<https://github.com/xgs87762GH/log-viewer>
 
 ## 功能速览
 
 | 领域 | 能力 |
 | --- | --- |
-| 日志阅读 | 只拉尾部 N MB / 最多 N 行、可变行高虚拟滚动、自动换行、长条目折叠、点击行查看上下文（前后行懒加载）、整文件流式下载 |
+| 日志阅读 | 只拉尾部 N MB / 最多 N 行、可变行高虚拟滚动、自动换行、长条目折叠、点击行查看上下文（前后行懒加载）、整文件流式下载（按「中文环境标签_项目展示名_级别.log」命名，如「测试环境_订单服务_INFO.log」） |
 | 搜索工具 | 芯片式包含/排除过滤与过滤历史、过滤后行数反馈、独立高亮词条（整串匹配，可含逗号）、查找并跳转「第 n/N 处」并标记当前行 |
 | 历史归档 | 按日期筛选滚动日志文件；文件名索引本地持久化、按日软刷新、可强制全量探测 |
 | 界面 | 仪表盘 / 日志聚合 / 统计 / 设置四个视图；两级导航；三套主题、字体与阅读行为设置 |
 | 工具区 | 过滤、高亮、查找、历史文件统一收进搜索工具抽屉；可固定，未固定时点击外部或切走视图自动收起 |
 | 访问统计（可选） | SQLite 记录在线与操作事件，仅白名单 IP 可查看；不记录日志正文 |
 | 性能 | 请求超时与取消、同键进行中请求共享、正文内存短期缓存、≥2500 行交给 Web Worker、视图 keep-alive |
+| 配置管理 | 单个 JSON 导入导出服务配置与本地偏好；导入前预览并逐项勾选，写回服务端前自动备份 |
+| 版本检查 | 页面加载时比对 GitHub 最新 tag 与本地版本（1 小时缓存、失败静默）；有新版本时在侧栏版本号旁显示可点击的「有更新」提示 |
 
 完整功能清单见 [`docs/FEATURES.md`](docs/FEATURES.md)，加载与缓存链路见 [`docs/DATA-FLOW.md`](docs/DATA-FLOW.md)。
 
@@ -89,6 +91,7 @@ python manage.py open     # 打开浏览器
 ```text
 log-viewer/
 ├── VERSION / RELEASE_NOTES_v1.0.1.md   # 版本与发布说明
+├── backup/                 # 配置导入前的自动备份（gitignore）
 ├── config/                 # *.example 可提交；真实 json 私有
 ├── docs/                   # 上表六篇文档
 ├── frontend/
@@ -108,3 +111,4 @@ log-viewer/
 - 版本号以 `VERSION` 为准；`frontend/package.json`、两个 `package-lock.json`、`frontend/src/constants/version.js`、`frontend/index.html` 及 `server.py` / `manage.py` 的兜底值需同步。历史发布说明见 [`RELEASE_NOTES_v1.0.1.md`](RELEASE_NOTES_v1.0.1.md)，本版变更见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。
 - 升级前端后执行 `python manage.py build`，再 `python manage.py restart`。
 - 含内网 host、账号或 IP 白名单的 `config/*.json` 与 `.env` 已 gitignore，**请勿推送到公开仓库**。
+- 导出的配置归档同样包含内网地址与白名单 IP，请妥善保管；代理凭据（`.env`）不会进入归档。

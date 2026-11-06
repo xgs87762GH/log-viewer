@@ -4,7 +4,18 @@
       <span class="logo" title="日志中心" aria-hidden="true"><i /><i /><i /></span>
       <div v-show="!nav.navL1Collapsed" class="brand">
         <span class="title">日志中心</span>
-        <span class="ver ui-chip" :title="'v' + APP_VERSION">v{{ APP_VERSION }}</span>
+        <span class="ver ui-chip" :title="versionTitle">v{{ APP_VERSION }}</span>
+        <a
+          v-if="update.status === 'available'"
+          class="upd ui-chip ui-chip--warn"
+          :href="releaseUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          :title="`发现新版本 v${update.latest}（当前 v${APP_VERSION}），点击查看 GitHub 标签`"
+          :aria-label="`发现新版本 v${update.latest}`"
+        >
+          <i class="ui-dot ui-dot--warn" aria-hidden="true" /> 有更新 v{{ update.latest }}
+        </a>
       </div>
     </header>
 
@@ -35,17 +46,29 @@
 /**
  * NavPrimary —— 第一栏
  * 收起不做 width 过渡，避免右侧日志区连续 reflow 卡顿。
+ * 版本旁的更新提示由 useVersionCheck 在页面加载时检查，失败静默。
  */
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useNavigation } from '../../composables/useNavigation'
+import { useVersionCheck } from '../../composables/useVersionCheck'
 import { APP_VERSION } from '../../constants/version'
+import { GITHUB_TAGS_PAGE } from '../../constants/versionCheck'
 import NavViewSwitch from './NavViewSwitch.vue'
 
 const nav = useNavigation()
+const update = useVersionCheck()
+const releaseUrl = GITHUB_TAGS_PAGE
+
+const versionTitle = computed(() => {
+  if (update.status === 'available') return `当前 v${APP_VERSION}，最新 v${update.latest}`
+  if (update.status === 'up-to-date') return `当前 v${APP_VERSION} · 已是最新`
+  return `当前 v${APP_VERSION} · 暂未获取到版本信息`
+})
 
 /** 窄屏首屏默认收起导航，拓宽主内容区（仅首次，不覆盖用户之后的手动展开） */
 onMounted(() => {
+  update.check()
   if (typeof window === 'undefined' || !window.matchMedia) return
   if (!window.matchMedia('(max-width: 900px)').matches) return
   if (!nav.navL1Collapsed) nav.toggleNavL1()
@@ -110,6 +133,17 @@ onMounted(() => {
   font-variant-numeric: tabular-nums;
   color: var(--t3);
 }
+.upd {
+  align-self: flex-start;
+  gap: 4px;
+  padding: 1px 7px;
+  font-size: 10px;
+  text-decoration: none;
+  transition: box-shadow var(--dur) var(--ease);
+}
+.upd:hover { box-shadow: 0 0 0 2px var(--warn-bg) }
+.upd:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px }
+.upd .ui-dot { width: 5px; height: 5px; box-shadow: none }
 .nav-primary.collapsed .hd { justify-content: center; padding-left: 0; padding-right: 0 }
 
 .body { flex: 1; min-height: 0; overflow: auto; padding: 10px 0 }

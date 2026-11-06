@@ -3,7 +3,8 @@
  * 不依赖 Vue；由 useLogViewFilters 编排。
  */
 
-export const FILTER_HISTORY_KEY = 'log_viewer_filter_history'
+import { FILTER_HISTORY_KEY } from '../constants/storageKeys.js'
+export { FILTER_HISTORY_KEY }
 export const FILTER_HISTORY_MAX = 15
 
 /** @param {Array<{ text: string, mode: string }>} filters */

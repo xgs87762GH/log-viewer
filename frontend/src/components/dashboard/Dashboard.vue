@@ -110,7 +110,11 @@
             <span class="ui-dot" :class="dotClass(item)" />
             <div class="card-title">
               <div class="nm" :title="item.svc.module">{{ item.svc.module }}</div>
-              <div class="sub">{{ item.svc.app }} · {{ item.svc.host }}</div>
+              <div class="sub">
+                <span class="sub-app" :title="item.svc.app">{{ item.svc.app }}</span>
+                <span class="sub-sep" aria-hidden="true">·</span>
+                <span class="sub-host" :title="item.svc.host">{{ item.svc.host }}</span>
+              </div>
             </div>
             <span class="ui-chip" :class="item.levels.length ? 'ui-chip--accent' : ''">
               {{ item.levels.length }} 级别
@@ -123,9 +127,9 @@
                 type="button"
                 class="lv-open"
                 :class="`tone-${levelTagType(lv)}`"
-                :title="`打开 ${lv} 日志聚合`"
+                :title="item.levelSizes[lv] ? `打开 ${lv} 日志聚合（当前文件 ${item.levelSizes[lv]}）` : `打开 ${lv} 日志聚合`"
                 @click="nav.openLog(item.i, lv)"
-              >{{ lv }}</button>
+              >{{ lv }}<small v-if="item.levelSizes[lv]" class="lv-size">{{ item.levelSizes[lv] }}</small></button>
               <span class="lv-sep" aria-hidden="true" />
               <el-tooltip :content="`新标签打开 ${lv} 日志文件`" placement="top" :show-after="400">
                 <a
@@ -257,14 +261,17 @@ const serviceRows = computed(() => nav.services.map((svc, i) => {
   const envKey = nav.env
   const levels = nav.getLevels(svc)
   const levelUrls = {}
+  const levelSizes = {}
   for (const lv of levels) {
     levelUrls[lv] = logs.buildLogUrl(svc.host, svc.app, lv, undefined, envKey)
+    levelSizes[lv] = logs.getActiveFileSize(svc.host, svc.app, lv, envKey)
   }
   return {
     svc,
     i,
     levels,
     levelUrls,
+    levelSizes,
     dirUrl: logs.buildDirUrl(svc.host, svc.app, envKey),
     probed: !!logs.getIndexMeta(svc.host, svc.app, envKey),
   }
@@ -561,15 +568,37 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 应用名过长时只省略应用名，主机 IP 始终完整可见 */
 .sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  margin-top: 3px;
   font-size: var(--fs-xs);
   color: var(--t3);
   font-family: var(--font-log);
-  margin-top: 3px;
+}
+/* 只收缩、不撑开：应用名截断后 IP 紧随其后，不会被顶到卡片最右侧 */
+.sub-app {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.sub-sep { flex: none; opacity: .55 }
+/* 无宽度上限：IP 无论多长都完整显示，溢出空间全部由应用名吸收 */
+.sub-host {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t2);
+  font-variant-numeric: tabular-nums;
+}
+.card-hd .ui-chip { flex: none; white-space: nowrap }
 .card-levels { display: flex; flex-wrap: wrap; gap: var(--sp-2) }
 /* 每个级别一个分段按钮组：主按钮 + 外链 / 下载，避免散落的小圆按钮 */
 .lv-group {
@@ -600,6 +629,7 @@ onBeforeUnmount(() => {
   transition: box-shadow var(--dur) var(--ease);
 }
 .lv-open:hover { box-shadow: inset 0 0 0 999px var(--surf-hover) }
+.lv-size { margin-left: 6px; font-size: 10px; font-weight: 500; opacity: .72; letter-spacing: 0 }
 .lv-open.tone-success, .lv-open.tone-primary { color: var(--info); background: var(--info-bg) }
 .lv-open.tone-warning { color: var(--warn); background: var(--warn-bg) }
 .lv-open.tone-danger { color: var(--err); background: var(--err-bg) }

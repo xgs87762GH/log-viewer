@@ -14,3 +14,6 @@ backup/
 config/logs.json
 config/access.json
 .env
+
+# CodeBuddy IDE 本地数据
+.codebuddy/

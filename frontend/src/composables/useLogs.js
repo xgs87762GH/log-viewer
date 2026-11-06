@@ -5,8 +5,9 @@ import {
   matchLevelFiles,
   formatActiveName,
 } from '../constants/logFileRules'
-import { extractLogNamesFromDirHtml } from '../utils/dirListing'
+import { extractLogFilesFromDirHtml } from '../utils/dirListing'
 import { downloadLogFile as streamDownload } from '../utils/logDownload'
+import { buildDownloadName } from '../utils/downloadName'
 import {
   moduleKey,
   shouldSoftRefresh,
@@ -225,21 +226,26 @@ function buildDirUrl(host, app, envKey) {
  * 整文件下载走独立端点：超时、附件头与错误处理都和 tail 探测不同。
  * envKey 显式传入，避免 findService 跨环境匹配同名 host/app 选错 baseUrl。
  */
-function buildDownloadUrl(host, app, level, filename, envKey) {
+function buildDownloadUrl(host, app, level, filename, envKey, displayName) {
   const url = buildLogUrl(host, app, level, filename, envKey)
   const params = new URLSearchParams({ url })
-  const name = url.split('/').pop()
+  const name = displayName || url.split('/').pop()
   if (name) params.set('file', name)
   return `/api/download?${params.toString()}`
 }
 
+/** 下载名统一为「中文环境标签_项目展示名_级别.log」；后端附件头与前端保存名保持一致 */
 function downloadLogFile(host, app, level, filename, opts = {}) {
   const { envKey, ...downloadOpts } = opts
-  const url = buildLogUrl(host, app, level, filename, envKey)
-  const name = filename || url.split('/').pop() || `${level}.log`
-  return streamDownload(buildDownloadUrl(host, app, level, filename, envKey), {
+  const svc = findService(host, app, envKey)
+  const displayName = buildDownloadName({
+    env: state.config?.environments?.[envKey]?.label || envKey,
+    module: svc?.module || app,
+    level,
+  })
+  return streamDownload(buildDownloadUrl(host, app, level, filename, envKey, displayName), {
     ...downloadOpts,
-    filename: name,
+    filename: displayName,
   })
 }
 
@@ -284,13 +290,18 @@ function emptyIndexEntry(rule, fileCount = 0) {
   })
 }
 
-function buildEntryFromNames(allNames, host, app, envKey) {
+function buildEntryFromFiles(dirFiles, host, app, envKey) {
   const rule = getLogFileRule(host, app, envKey)
+  const sizeByName = new Map(dirFiles.map((f) => [f.name, f.size]))
+  const allNames = dirFiles.map((f) => f.name)
   const levels = []
   const files = {}
   const archives = {}
   for (const lv of LOG_LEVELS) {
-    const list = matchLevelFiles(allNames, app, lv, rule)
+    const list = matchLevelFiles(allNames, app, lv, rule).map((f) => ({
+      ...f,
+      size: sizeByName.get(f.name) || '',
+    }))
     if (!list.length) continue
     levels.push(lv)
     files[lv] = list[0].name
@@ -306,13 +317,22 @@ function buildEntryFromNames(allNames, host, app, envKey) {
   })
 }
 
+/** 目录页给出的活跃文件大小；未探测或目录未给出时为空串 */
+function getActiveFileSize(host, app, level, envKey) {
+  const rule = getLogFileRule(host, app, envKey)
+  const entry = hydrateFromStore(moduleKey(host, app), rule)
+  const list = entry?.archives?.[level] || []
+  const active = list.find((f) => f.active) || list.find((f) => f.name === entry?.files?.[level])
+  return active?.size || ''
+}
+
 async function fetchDirAndBuild(host, app, envKey, { signal } = {}) {
   const dirUrl = buildDirUrl(host, app, envKey)
   const path = '/api/proxy?' + new URLSearchParams({ url: dirUrl }).toString()
   const key = `dir:${envKey}|${moduleKey(host, app)}`
   const task = trackInflight(key, async (taskSignal) => {
     const html = await requestText(path, { signal: taskSignal, timeoutMs: DIR_TIMEOUT_MS })
-    return buildEntryFromNames(extractLogNamesFromDirHtml(html), host, app, envKey)
+    return buildEntryFromFiles(extractLogFilesFromDirHtml(html), host, app, envKey)
   })
   const { promise, release } = attachInflight(task, signal)
   try {
@@ -652,6 +672,7 @@ const instance = Object.assign(state, {
   getLogFileRule,
   guessActiveFileName,
   peekLogFiles,
+  getActiveFileSize,
   buildLogUrl,
   buildDirUrl,
   buildDownloadUrl,

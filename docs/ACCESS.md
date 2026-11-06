@@ -28,7 +28,7 @@
 ```
 
 - `enabled: false` 关闭埋点与统计 API。
-- 该文件**不**通过 `/config/` 对外暴露。
+- 该文件**不**通过 `/config/` 对外暴露，只能经下方受白名单保护的 `/api/config/*` 读写。
 - 开发环境由 Vite 代理写入 `X-Forwarded-For`，以便后端识别真实客户端 IP。
 
 ## 接口
@@ -37,7 +37,11 @@
 POST /api/access/hello | ping | event   → 写入 sessions / events
 GET  /api/access/me                    → { ip, canViewStats }（公开）
 GET  /api/access/online | recent | summary → 仅白名单 IP（否则 403）
+GET  /api/config/export                  → 仅白名单 IP，返回 logs / access 配置
+POST /api/config/import                  → 仅白名单 IP，备份后写入服务端配置
 ```
+
+白名单还控制**配置导入导出**：两个 `/api/config/` 接口非白名单 IP 返回 403；导入服务配置会在 `backup/` 生成备份后原子替换，代理凭据（`.env`）不入归档。功能说明见 [FEATURES.md](FEATURES.md)。
 
 ## 前端
 

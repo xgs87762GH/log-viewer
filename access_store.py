@@ -50,6 +50,14 @@ def load_access_config() -> dict[str, Any]:
         return defaults
 
 
+def invalidate_config_cache():
+    """配置被外部改写后强制下次读取重新加载（mtime 同秒可能不变）。"""
+    global _cfg_cache, _cfg_mtime
+    with _lock:
+        _cfg_cache = None
+        _cfg_mtime = 0.0
+
+
 def get_conn() -> sqlite3.Connection:
     global _conn
     with _lock:

@@ -11,8 +11,9 @@
  */
 
 import { sortFileList } from '../constants/logFileRules.js'
+import { INDEX_STORAGE_KEY } from '../constants/storageKeys.js'
 
-export const INDEX_STORAGE_KEY = 'log_viewer_file_index_v1'
+export { INDEX_STORAGE_KEY }
 
 const listeners = new Set()
 const invalidateListeners = new Set()

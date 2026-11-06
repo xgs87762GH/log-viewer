@@ -8,6 +8,9 @@ import urllib.error
 import os
 import argparse
 import base64
+import shutil
+import threading
+import time
 import socketserver
 import access_store
 from envfile import load_env
@@ -36,9 +39,9 @@ DOWNLOAD_TIMEOUT_SEC = 300
 def read_version():
     try:
         with open(os.path.join(HERE, 'VERSION'), encoding='utf-8') as f:
-            return f.read().strip() or '1.0.2'
+            return f.read().strip() or '1.0.3'
     except Exception:
-        return '1.0.2'
+        return '1.0.3'
 
 
 APP_VERSION = read_version()
@@ -74,12 +77,102 @@ def _client_ip(handler):
     return ip
 
 
+DOWNLOAD_NAME_MAX = 120
+DOWNLOAD_NAME_ILLEGAL = '\\/:*?"<>|\r\n'
+
+
 def _safe_download_name(raw, url):
-    """附件名只取 basename，剥离路径与控制字符，防响应头注入。"""
+    """附件名兜底清洗：非法字符集与长度上限同前端 utils/downloadName.js。
+
+    三段命名、空格折叠等展示规范由前端生成；这里只保证响应头安全。
+    """
     name = raw or os.path.basename(urllib.parse.urlparse(url).path) or ''
     name = str(name).replace('\\', '/').split('/')[-1]
-    name = ''.join(ch for ch in name if ch.isprintable() and ch not in '\r\n"')
-    return name[:180] or 'log.txt'
+    name = ''.join(
+        '_' if (not ch.isprintable() or ch in DOWNLOAD_NAME_ILLEGAL) else ch
+        for ch in name
+    )
+    return name[:DOWNLOAD_NAME_MAX] or 'log.txt'
+
+
+# ── 配置导入 / 导出（仅白名单 IP）───────────────────────────
+BACKUP_DIR = os.path.join(HERE, 'backup')
+# 服务端配置 POST body 上限；前端归档文件限 2MB（含本地段），两者语义不同
+MAX_CONFIG_BODY = 1024 * 1024
+_CONFIG_LOCK = threading.Lock()
+
+
+def _read_json_config(filename):
+    """只读取两个固定配置文件；缺失或损坏按 null 返回，不泄漏路径与堆栈。"""
+    path = os.path.join(CONFIG_DIR, filename)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _validate_logs_config(obj):
+    """服务配置结构校验：environments → services 的 host/app 必须是字符串。"""
+    if not isinstance(obj, dict) or not isinstance(obj.get('environments'), dict):
+        return None
+    if 'baseUrl' in obj and not isinstance(obj['baseUrl'], str):
+        return None
+    for env in obj['environments'].values():
+        if not isinstance(env, dict) or not isinstance(env.get('services', []), list):
+            return None
+        for svc in env.get('services', []):
+            if not isinstance(svc, dict):
+                return None
+            if not isinstance(svc.get('host'), str) or not isinstance(svc.get('app'), str):
+                return None
+            if 'levels' in svc and not isinstance(svc['levels'], list):
+                return None
+    return obj
+
+
+def _validate_access_config(obj):
+    """访问配置按已知字段重建并夹紧数值，避免把任意内容写进白名单文件。"""
+    if not isinstance(obj, dict):
+        return None
+    out = dict(access_store.load_access_config())
+    if isinstance(obj.get('enabled'), bool):
+        out['enabled'] = obj['enabled']
+    for key, lo, hi in (
+        ('heartbeatSec', 5, 3600),
+        ('onlineTimeoutSec', 10, 86400),
+        ('retainDays', 1, 3650),
+    ):
+        value = obj.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and lo <= value <= hi:
+            out[key] = value
+    ips = obj.get('statsAllowIps')
+    if isinstance(ips, list) and all(isinstance(x, str) for x in ips):
+        out['statsAllowIps'] = ips
+    keys = ('enabled', 'heartbeatSec', 'onlineTimeoutSec', 'retainDays', 'statsAllowIps')
+    return {k: out[k] for k in keys}
+
+
+def _write_json_config(filename, obj):
+    """备份原文件 + 临时文件原子替换；返回备份文件名（空表示原本不存在）。"""
+    target = os.path.join(CONFIG_DIR, filename)
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    stamp = time.strftime('%Y%m%d-%H%M%S')
+    backup = ''
+    if os.path.isfile(target):
+        stem = os.path.splitext(filename)[0]
+        backup = os.path.join(BACKUP_DIR, '{}-{}.json'.format(stem, stamp))
+        shutil.copy2(target, backup)
+    tmp = os.path.join(BACKUP_DIR, '.{}-{}.tmp'.format(filename, stamp))
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(obj, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, target)
+    finally:
+        if os.path.isfile(tmp):
+            os.remove(tmp)
+    return os.path.basename(backup) if backup else ''
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -120,6 +213,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.handle_download(parsed.query)
             return
 
+        if parsed.path == '/api/config/export':
+            self.handle_config_export()
+            return
+
         if parsed.path == '/api/access/online':
             self.handle_access_online()
             return
@@ -157,6 +254,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.json_err(503, 'Access tracking disabled')
             return
 
+        if parsed.path == '/api/config/import':
+            self.handle_config_import()
+            return
+
         if parsed.path == '/api/access/hello':
             self.handle_access_hello()
             return
@@ -190,6 +291,60 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(data)
         except Exception as e:
             self.send_error(500, str(e))
+
+    def handle_config_export(self):
+        """导出服务 / 访问配置；含内网地址与白名单，仅统计白名单 IP 可读取。"""
+        if self._require_stats_ip() is None:
+            return
+        self.json_ok({
+            'logs': _read_json_config('logs.json'),
+            'access': _read_json_config('access.json'),
+        })
+
+    def handle_config_import(self):
+        """导入配置：限白名单 IP、限 1MB、校验结构、备份后原子写入固定文件。"""
+        if self._require_stats_ip() is None:
+            return
+        length = int(self.headers.get('Content-Length') or 0)
+        if length <= 0 or length > MAX_CONFIG_BODY:
+            self.json_err(400, '配置内容为空或超过 1MB')
+            return
+        body = _json_body(self)
+        if 'logs' not in body and 'access' not in body:
+            self.json_err(400, '没有可导入的配置')
+            return
+
+        logs = None
+        access = None
+        if 'logs' in body:
+            logs = _validate_logs_config(body.get('logs'))
+            if logs is None:
+                self.json_err(400, 'logs 配置结构不合法')
+                return
+        if 'access' in body:
+            access = _validate_access_config(body.get('access'))
+            if access is None:
+                self.json_err(400, 'access 配置结构不合法')
+                return
+
+        written, backups = [], []
+        try:
+            with _CONFIG_LOCK:
+                if logs is not None:
+                    backups.append(_write_json_config('logs.json', logs))
+                    written.append('logs.json')
+                if access is not None:
+                    backups.append(_write_json_config('access.json', access))
+                    written.append('access.json')
+                    access_store.invalidate_config_cache()
+        except Exception as e:
+            self.json_err(500, '写入配置失败: {}'.format(e))
+            return
+        self.json_ok({
+            'ok': True,
+            'written': written,
+            'backups': [b for b in backups if b],
+        })
 
     def handle_proxy(self, query):
         params = urllib.parse.parse_qs(query)

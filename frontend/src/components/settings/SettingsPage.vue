@@ -4,7 +4,7 @@
       <div class="hero-copy">
         <span class="ui-eyebrow">Preferences / 偏好设置</span>
         <h1>让日志中心<span class="ui-grad-text">更适合你</span></h1>
-        <p>主题、字体与阅读行为集中在这里调整。所有改动先编辑为草稿，保存后才会应用到全站；离开本页不会写入。</p>
+        <p>主题、字体与阅读行为集中在这里调整，另可导入导出配置。偏好改动先编辑为草稿，保存后才会应用到全站；离开本页不会写入。</p>
       </div>
       <div class="hero-side">
         <span class="ui-chip" :class="dirty ? 'ui-chip--warn' : 'ui-chip--ok'">
@@ -27,7 +27,7 @@
           :aria-current="activeSection === s.id ? 'true' : undefined"
           @click="scrollToSection(s.id)"
         >
-          <el-icon :size="16"><component :is="sectionIcons[s.id]" /></el-icon>
+          <el-icon :size="16"><component :is="sectionIcons[s.icon]" /></el-icon>
           <span class="nav-text">
             <strong>{{ s.label }}</strong>
             <small>{{ s.hint }}</small>
@@ -45,7 +45,7 @@
         >
           <header class="card-head">
             <span class="card-icon">
-              <el-icon :size="18"><component :is="sectionIcons[s.id]" /></el-icon>
+              <el-icon :size="18"><component :is="sectionIcons[s.icon]" /></el-icon>
             </span>
             <div class="card-title">
               <h2>{{ s.title }}</h2>
@@ -53,14 +53,7 @@
             </div>
           </header>
           <div class="card-body">
-            <SettingsAppearance
-              v-if="s.id === 'appearance'"
-              :draft="draft"
-              :themes="settings.THEMES"
-              @update="onSectionUpdate"
-            />
-            <SettingsTypography v-else-if="s.id === 'typography'" :draft="draft" />
-            <SettingsBehavior v-else :draft="draft" />
+            <component :is="sectionComponents[s.component]" v-bind="propsFor(s)" />
           </div>
         </section>
       </div>
@@ -88,19 +81,34 @@
 import {
   reactive, computed, ref, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick,
 } from 'vue'
-import { Brush, EditPen, Operation } from '@element-plus/icons-vue'
+import { Brush, EditPen, Operation, Folder } from '@element-plus/icons-vue'
 import { useSettings } from '../../composables/useSettings'
 import { useToast } from '../../composables/useToast'
 import { clampContextConfig } from '../../constants/logContextConfig'
 import { SETTINGS_SECTIONS } from '../../constants/settingsOptions'
-import SettingsAppearance from './SettingsAppearance.vue'
-import SettingsTypography from './SettingsTypography.vue'
-import SettingsBehavior from './SettingsBehavior.vue'
+
+// 分区组件按文件名自动发现：新增分区只需放一个 Settings*.vue 并在 SETTINGS_SECTIONS 声明
+const modules = import.meta.glob(['./Settings*.vue', '!./SettingsPage.vue'], { eager: true })
+const sectionComponents = Object.fromEntries(
+  Object.entries(modules).map(([path, mod]) => [
+    path.split('/').pop().replace('.vue', ''),
+    mod.default,
+  ]),
+)
+const sectionIcons = { Brush, EditPen, Operation, Folder }
 
 const settings = useSettings()
 const toast = useToast()
 const sections = SETTINGS_SECTIONS
-const sectionIcons = { appearance: Brush, typography: EditPen, behavior: Operation }
+
+/** 按 SETTINGS_SECTIONS 的 props 声明装配入参，避免把无关属性落到分区根元素 */
+function propsFor(section) {
+  const props = {}
+  if (section.props.draft) props.draft = draft
+  if (section.props.themes) props.themes = settings.THEMES
+  if (section.props.update) props.onUpdate = onSectionUpdate
+  return props
+}
 
 const draft = reactive({ theme: 'dark', colors: {}, fonts: {}, sizes: {}, behavior: {} })
 const activeSection = ref(sections[0].id)
@@ -205,10 +213,27 @@ function teardownObserver() {
 }
 
 // 首次挂载与每次从 keep-alive 激活都重取草稿：切走即丢弃，绝不自动写入
+// 订阅 settings 的提交广播：保存或「导入配置」写入 settings 段都会触发，
+// 此时把草稿重置为当前 cfg（= 刚导入/保存的值），既立即生效又消除「未保存」误报。
+let stopCommit = null
+function syncDraftFromCommit() { hydrateDraft() }
+
 onMounted(() => { hydrateDraft(); nextTick(setupObserver) })
-onActivated(() => { hydrateDraft(); nextTick(setupObserver) })
-onDeactivated(teardownObserver)
-onBeforeUnmount(teardownObserver)
+onActivated(() => {
+  hydrateDraft()
+  nextTick(setupObserver)
+  if (!stopCommit) stopCommit = settings.onCommit(syncDraftFromCommit)
+})
+onDeactivated(() => {
+  teardownObserver()
+  stopCommit?.()
+  stopCommit = null
+})
+onBeforeUnmount(() => {
+  teardownObserver()
+  stopCommit?.()
+  stopCommit = null
+})
 </script>
 
 <style scoped>

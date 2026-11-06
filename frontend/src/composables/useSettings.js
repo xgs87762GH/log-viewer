@@ -9,7 +9,10 @@ import { mixHex, withAlpha } from '../utils/color'
  * 本模块：cfg 持久化 + 应用到 CSS 变量 / Element Plus。
  */
 
-const STORAGE_KEY = 'log_viewer_settings'
+import {
+  SETTINGS_STORAGE_KEY as STORAGE_KEY,
+  WORDWRAP_FLAG_KEY,
+} from '../constants/storageKeys.js'
 
 const DEFAULTS = {
   theme: 'dark',
@@ -60,10 +63,9 @@ function load() {
   }
   // 去掉悬停撑开后，旧设置里 wordWrap=false 会导致超长行完全看不见 → 一次性改回默认开
   try {
-    const flag = 'log_viewer_wordwrap_on_v1'
-    if (!localStorage.getItem(flag)) {
+    if (!localStorage.getItem(WORDWRAP_FLAG_KEY)) {
       cfg.behavior.wordWrap = true
-      localStorage.setItem(flag, '1')
+      localStorage.setItem(WORDWRAP_FLAG_KEY, '1')
       save()
     }
   } catch {}

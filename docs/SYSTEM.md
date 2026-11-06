@@ -40,7 +40,7 @@ flowchart TD
 | 仪表盘 `dashboard` | `Dashboard.vue` | 环境切换、模块列表、探测级别、下载 |
 | 日志聚合 `viewer` | `LogViewer.vue` | 日志阅读与搜索工具区 |
 | 统计 `stats` | `AccessStats.vue` | 在线与访问事件（白名单可见） |
-| 设置 `settings` | `SettingsPage.vue` | 外观 / 字体 / 行为三分区，草稿保存后生效 |
+| 设置 `settings` | `SettingsPage.vue` | 外观 / 字体 / 行为 / 配置四分区，偏好草稿保存后生效 |
 
 - `App.vue` 用 `keep-alive` + `defineAsyncComponent` 分发，二级导航**仅在 `viewer` 挂载**。
 - 一级导航四项：仪表盘 / 日志聚合 / 统计 / 设置；两级侧栏可分别折叠（本地持久化）。
@@ -57,20 +57,23 @@ frontend/src/
 │   │                 # LogToolsDrawer、LogHighlightBar、LogFindBar、LogHistoryBar
 │   ├── dashboard/    # Dashboard
 │   ├── stats/        # AccessStats
-│   └── settings/     # SettingsPage + Appearance / Typography / Behavior
+│   └── settings/     # SettingsPage + Appearance / Typography / Behavior / ConfigTransfer
 ├── composables/      # useLogs / useNavigation / useSettings / useLogViewFilters
-│                     # useLogSearchTools / usePresence / useAccessLog / useToast
+│                     # useLogSearchTools / useConfigTransfer / usePresence / useAccessLog / useToast
+│                     # useVersionCheck
 ├── constants/        # logLevels / logFileRules / logHighlightRules / logContextConfig
 │                     # themes / timing / settingsOptions / logSearchTools / version
+│                     # storageKeys（所有本地存储键的唯一来源）/ versionCheck
 ├── utils/            # apiClient / logParser / logEntries / logViewRows / logProcessClient
 │                     # logFilterMatch / logFind / logVirtualLayout / logFileIndex
 │                     # highlightTerms / toolDrawerState / filterHistory / logDownload
 │                     # logContextWindow / logTextMetrics / dirListing / color
+│                     # downloadName / configBundle / versionCheck
 ├── workers/          # logProcess.worker.js
 └── styles/           # global.css（静态 token、UI 原子类、v-html 样式）
 ```
 
-单测与性能基准在 `frontend/tests/`（无第三方测试依赖）。
+单测与性能基准在 `frontend/tests/`（无第三方测试依赖）。配置导入前的备份写在 `backup/`（已 gitignore）。
 
 ## 后端边界
 
@@ -81,8 +84,12 @@ frontend/src/
 | `GET /api/download?url=&file=` | 不带 tail，整文件流式下载，带附件头与总大小 |
 | `POST /api/access/hello\|ping\|event` | 在线心跳与操作埋点 |
 | `GET /api/access/me\|online\|recent\|summary` | 统计查询，后三者仅白名单 IP |
+| `GET /api/config/export` | 返回 `logs.json` / `access.json`，仅白名单 IP |
+| `POST /api/config/import` | 写回服务端配置，仅白名单 IP；1MB 上限、结构校验、备份后原子写 |
 
 `/api/download` 的路由必须排在 SPA fallback 之前；只有 `/assets/` 下带 hash 的构建产物设置了 7 天强缓存，**代理响应不缓存日志正文**。
+
+版本更新检查**不经过后端**：前端直连 `api.github.com` 的公开 tags 接口（端点在 `constants/versionCheck.js`），只读、不携带任何内网信息，失败或限流时静默降级；结果按 1 小时缓存在 localStorage。
 
 ## 本地持久化
 
@@ -91,10 +98,11 @@ frontend/src/
 | `log_viewer_settings` | localStorage | 主题、字体、阅读行为 |
 | `log_viewer_settings_init` / `log_viewer_wordwrap_on_v1` | localStorage | 首次初始化、旧设置迁移标志 |
 | `log_viewer_nav_l1_collapsed` / `log_viewer_nav_l2_collapsed` | localStorage | 两级导航折叠 |
-| `log_viewer_file_index_v1` | localStorage | 文件名与级别索引，按日软刷新、跨标签失效 |
+| `log_viewer_file_index_v1` | localStorage | 文件名、级别索引与目录页大小，按日软刷新、跨标签失效 |
 | `log_viewer_filter_history` | localStorage | 过滤条件历史（最多 15 条） |
 | `log_viewer_tools_drawer_v1` | localStorage | 搜索工具抽屉是否固定 |
 | `log_viewer_access_sid` | sessionStorage | 在线会话标识 |
+| `log_viewer_version_check` | localStorage | GitHub 最新 tag 与检查时间，1 小时缓存 |
 
 日志正文不在表中：它只在内存里短期缓存，详见 [DATA-FLOW.md](DATA-FLOW.md)。
 

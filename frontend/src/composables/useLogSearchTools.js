@@ -94,6 +94,12 @@ const toggleDrawer = () => applyDrawer('toggle')
 const pinDrawer = () => applyDrawer('pin')
 const unpinDrawer = () => applyDrawer('unpin')
 
+/** 导入 uiState 段后调用：抽屉固定态从 localStorage 重新读取并同步开合 */
+function reload() {
+  drawerPinned.value = readPinned()
+  drawerOpen.value = drawerPinned.value
+}
+
 export function useLogSearchTools() {
   return {
     highlightTerms,
@@ -115,5 +121,6 @@ export function useLogSearchTools() {
     toggleDrawer,
     pinDrawer,
     unpinDrawer,
+    reload,
   }
 }
