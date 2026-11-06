@@ -35,9 +35,9 @@ IS_WIN = os.name == "nt"
 
 def read_version() -> str:
     try:
-        return (HERE / "VERSION").read_text(encoding="utf-8").strip() or "1.0.1"
+        return (HERE / "VERSION").read_text(encoding="utf-8").strip() or "1.0.2"
     except Exception:
-        return "1.0.1"
+        return "1.0.2"
 
 
 APP_VERSION = read_version()

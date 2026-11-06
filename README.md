@@ -1,168 +1,110 @@
 # Log Viewer
 
-通用内网日志浏览工具：通过本地 Python 代理拉取 LogIndex（或兼容服务）尾部日志，Vue 3 前端提供仪表盘、日志聚合与访问统计。
+内网日志浏览工具：本地 Python 代理通过 HTTP Range 拉取 LogIndex（或兼容服务）的日志尾部，Vue 3 前端提供仪表盘、日志聚合、访问统计与设置。**日志正文只存在于浏览器内存，不落盘。**
 
-**当前版本：`1.0.1`**（根目录 [`VERSION`](VERSION)）
+- 当前版本 `1.0.2`（[`VERSION`](VERSION)）
+- 仓库：<https://github.com/xgs87762GH/log-viewer>
 
-仓库：<https://github.com/xgs87762GH/log-viewer>
+## 功能速览
 
----
+| 领域 | 能力 |
+| --- | --- |
+| 日志阅读 | 只拉尾部 N MB / 最多 N 行、可变行高虚拟滚动、自动换行、长条目折叠、点击行查看上下文（前后行懒加载）、整文件流式下载 |
+| 搜索工具 | 芯片式包含/排除过滤与过滤历史、过滤后行数反馈、独立高亮词条（整串匹配，可含逗号）、查找并跳转「第 n/N 处」并标记当前行 |
+| 历史归档 | 按日期筛选滚动日志文件；文件名索引本地持久化、按日软刷新、可强制全量探测 |
+| 界面 | 仪表盘 / 日志聚合 / 统计 / 设置四个视图；两级导航；三套主题、字体与阅读行为设置 |
+| 工具区 | 过滤、高亮、查找、历史文件统一收进搜索工具抽屉；可固定，未固定时点击外部或切走视图自动收起 |
+| 访问统计（可选） | SQLite 记录在线与操作事件，仅白名单 IP 可查看；不记录日志正文 |
+| 性能 | 请求超时与取消、同键进行中请求共享、正文内存短期缓存、≥2500 行交给 Web Worker、视图 keep-alive |
 
-## 功能概览
-
-- **三栏布局**：一级导航（仪表盘 / 日志聚合 / 统计）+ 二级模块树 + 主内容区
-- **Range 尾部下载**：按设置的 `tailMB` / `maxLines` 拉取，避免整文件进浏览器
-- **可变行高虚拟滚动**：默认换行也只渲染可视区；大日志分组/过滤可走 Web Worker
-- **Grafana 风格文本过滤**：包含 / 排除芯片，按「整条日志」命中
-- **历史归档**：按日期筛选目录下滚动日志文件，本地索引 + 按日软刷新
-- **主题与行为设置**：主题色、字号、折叠阈值、自动滚到末尾等（浏览器 localStorage）
-- **访问统计**（可选）：SQLite 记录在线与打开事件，IP 白名单可看统计页
-
----
+完整功能清单见 [`docs/FEATURES.md`](docs/FEATURES.md)，加载与缓存链路见 [`docs/DATA-FLOW.md`](docs/DATA-FLOW.md)。
 
 ## 环境要求
 
-- Python 3.8+（标准库即可，无额外 pip 依赖）
+- Python 3.8+（仅标准库，无额外 pip 依赖）
 - Node.js 18+（仅构建前端需要）
-- 可访问的日志索引服务（HTTP Basic Auth + 目录列表 + 文件 Range 可选）
-
----
+- 可访问的日志索引服务（Basic Auth、目录列表，文件 Range 可选）
 
 ## 快速开始
-
-### 1. 克隆与配置
 
 ```bash
 git clone git@github.com:xgs87762GH/log-viewer.git
 cd log-viewer
 ```
 
-复制示例配置（**真实配置含内网地址，已 gitignore，勿提交**）：
+复制示例配置（真实配置含内网地址，已 gitignore，勿提交）：
 
 ```bash
 copy config\logs.json.example config\logs.json
 copy config\access.json.example config\access.json
-# macOS / Linux:
-# cp config/logs.json.example config/logs.json
-# cp config/access.json.example config/access.json
-```
-
-按本单位点编辑 `config/logs.json`（`baseUrl`、环境、`host` / `app` / `module`）。  
-按需编辑 `config/access.json` 中的 `statsAllowIps`。
-
-代理 Basic Auth（无内置默认账号）——推荐用项目根目录 `.env`：
-
-```bash
 copy .env.example .env
-# 编辑 .env，填写 LOG_VIEWER_USER / LOG_VIEWER_PASS
+# macOS / Linux 用 cp 代替 copy
 ```
 
-也可用进程环境变量（会覆盖 `.env` 同名项），或启动时 `--user` / `--password`。说明见 [`.env.example`](.env.example)。
-
-### 2. 构建并启动（单进程）
+按本单位点编辑 `config/logs.json`（`baseUrl`、环境、`host` / `app` / `module`）；按需调整 `config/access.json` 的 `statsAllowIps`；在 `.env` 填写代理 Basic Auth 的 `LOG_VIEWER_USER` / `LOG_VIEWER_PASS`。也可用进程环境变量（覆盖 `.env`）或启动参数 `--user` / `--password`，无内置默认账号。
 
 ```bash
-python manage.py build    # npm ci/install + vite build → frontend/dist
-python manage.py start    # 监听 :8090，托管 dist + API
+python manage.py build    # 构建前端到 frontend/dist
+python manage.py start    # 单进程启动，监听 :8090，同时托管页面与 API
 python manage.py open     # 打开浏览器
 ```
 
-或交互菜单：`python manage.py` / 双击 `Log-Viewer.bat`。
-
-开发热更新：
-
-```bash
-python manage.py dev      # API :8090 + Vite :5173（/api、/config 已代理）
-```
-
-默认访问：<http://localhost:8090>
-
----
+访问 <http://localhost:8090>。开发热更新用 `python manage.py dev`（API :8090 + Vite :5173，已代理 `/api` 与 `/config`）；也可直接运行 `python manage.py` 或双击 `Log-Viewer.bat` 打开交互菜单。
 
 ## 常用命令
 
 | 命令 | 说明 |
-|------|------|
-| `python manage.py start` | 启动（缺 dist 时会先 build） |
-| `python manage.py stop` | 停止 |
-| `python manage.py restart` | 重启 |
-| `python manage.py status` | 状态 |
-| `python manage.py build` | 仅构建前端 |
+| --- | --- |
+| `python manage.py start` | 启动（缺 `dist` 或源码较新时自动构建） |
+| `python manage.py stop` / `restart` | 停止 / 重启 |
+| `python manage.py status` / `logs` | 查看状态 / 日志 |
+| `python manage.py build` | 仅构建前端（缺 `node_modules` 时先 `npm install`） |
+| `python manage.py dev` | 后端 + Vite 开发模式 |
 | `python manage.py open` | 打开浏览器 |
-| `python manage.py shortcut` | 生成桌面快捷方式 |
-| `python manage.py dev` | 后端 + Vite |
+| `python manage.py shortcut` | 生成桌面快捷方式（`desktop` 为同义命令） |
 
----
+## 配置
 
-## 配置说明
+| 文件 | 关键字段 |
+| --- | --- |
+| [`config/logs.json.example`](config/logs.json.example) | `baseUrl`、`logFile.preset`、`environments.*.services[]`（`module` / `host` / `app` / 可选 `levels`）；服务可覆盖 `baseUrl` / `urlStyle` / `logFile` |
+| [`config/access.json.example`](config/access.json.example) | `enabled`、`heartbeatSec`、`onlineTimeoutSec`、`retainDays`、`statsAllowIps` |
+| [`.env.example`](.env.example) | `LOG_VIEWER_USER` / `LOG_VIEWER_PASS`（由 `envfile.py` 加载） |
 
-### `config/logs.json`
+`config/access.json` 不会通过 `/config/` 接口对外暴露；访问统计细节见 [`docs/ACCESS.md`](docs/ACCESS.md)。
 
-| 字段 | 含义 |
-|------|------|
-| `baseUrl` | 日志索引服务根地址 |
-| `logFile.preset` | 文件名规则预设（见 `logFileRules`） |
-| `environments.*.services[]` | `module` 展示名、`host`、`app`、可选 `levels` |
+## 文档索引
 
-示例见 [`config/logs.json.example`](config/logs.json.example)。
-
-### `config/access.json`
-
-| 字段 | 含义 |
-|------|------|
-| `enabled` | 是否开启访问埋点 |
-| `statsAllowIps` | 可查看「统计」页的客户端 IP |
-| `retainDays` | SQLite 事件保留天数 |
-
-示例见 [`config/access.json.example`](config/access.json.example)。该文件**不会**通过 `/config/` HTTP 接口对外暴露。
-
----
+| 文档 | 内容 |
+| --- | --- |
+| [`docs/SYSTEM.md`](docs/SYSTEM.md) | 技术栈、分层、目录、视图与后端边界 |
+| [`docs/FEATURES.md`](docs/FEATURES.md) | 按视图与能力汇总的功能清单 |
+| [`docs/DATA-FLOW.md`](docs/DATA-FLOW.md) | 从加载到展示的完整链路、缓存与失效策略 |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | 工程分层约束、UI 规则与变更检查清单 |
+| [`docs/ACCESS.md`](docs/ACCESS.md) | 访问记录与在线统计 |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | 版本、改造记录、已知限制与后续方向 |
 
 ## 项目结构
 
-```
+```text
 log-viewer/
-├── VERSION                 # 语义化版本
-├── config/
-│   ├── *.example           # 可提交的示例
-│   ├── logs.json           # 本地私有（gitignore）
-│   └── access.json         # 本地私有（gitignore）
-├── docs/
-│   ├── SYSTEM.md           # 系统说明
-│   ├── DESIGN.md           # 设计规范
-│   └── ACCESS.md           # 访问统计
-├── frontend/               # Vue 3 + Vite + Element Plus（按需）
-├── manage.py               # 启停 / 构建 / 快捷方式
-├── server.py               # 代理 + 静态托管 + access API
-└── access_store.py         # SQLite 访问记录
+├── VERSION / RELEASE_NOTES_v1.0.1.md   # 版本与发布说明
+├── config/                 # *.example 可提交；真实 json 私有
+├── docs/                   # 上表六篇文档
+├── frontend/
+│   ├── src/                # App.vue、components/、composables/、constants/、utils/、workers/、styles/
+│   ├── tests/              # node --test 纯函数用例与性能基准
+│   └── dist/               # 构建产物（gitignore）
+├── manage.py / manage.bat  # 启停、构建、快捷方式
+├── server.py               # 代理、下载、配置托管、access API
+├── access_store.py         # SQLite 访问记录（data/access.db）
+└── envfile.py              # .env 加载
 ```
 
-布局：`| 一级导航 | 二级导航(仅日志聚合) | 主内容 |`
+页面布局：`| 一级导航 | 二级导航（仅日志聚合） | 主内容 |`。
 
-更完整说明见 [`docs/SYSTEM.md`](docs/SYSTEM.md)、[`docs/DESIGN.md`](docs/DESIGN.md)。
+## 版本与安全
 
----
-
-## 架构要点
-
-- **Composables**：业务状态在 `useLogs` / `useNavigation` / `useSettings` 等模块单例中
-- **代理**：`GET /api/proxy?url=&tail=`，服务端 Range 拉尾部并分块回写
-- **下载**：`GET /api/download?url=&file=`，整文件流式转发；前端分片读取 + Blob 保存，带进度且可取消
-- **上下文**：点日志行或 hover 操作项打开弹窗，前后行懒加载（筛选 / 未筛选状态均可）
-- **性能**：虚拟列表、请求 Abort、正文短期缓存、视图 keep-alive、异步分包、大日志 Worker 常驻数据 + 增量查询
-- **主题**：CSS 变量 + Element Plus 映射，设置即时生效
-
----
-
-## 版本与发布
-
-- 版本源：根目录 `VERSION`、前端 `package.json`、`frontend/src/constants/version.js`（需同步）
-- Git tag：`v1.0.1`
-
-升级前端后执行 `python manage.py build`，再 `restart`。
-
----
-
-## 说明
-
-请勿将含内网 host、账号或白名单的真实 `config/*.json` 推送到公开仓库。
+- 版本号以 `VERSION` 为准；`frontend/package.json`、两个 `package-lock.json`、`frontend/src/constants/version.js`、`frontend/index.html` 及 `server.py` / `manage.py` 的兜底值需同步。历史发布说明见 [`RELEASE_NOTES_v1.0.1.md`](RELEASE_NOTES_v1.0.1.md)，本版变更见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。
+- 升级前端后执行 `python manage.py build`，再 `python manage.py restart`。
+- 含内网 host、账号或 IP 白名单的 `config/*.json` 与 `.env` 已 gitignore，**请勿推送到公开仓库**。

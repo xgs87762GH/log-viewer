@@ -1,195 +1,103 @@
-# SYSTEM — Log Viewer
+# 系统架构
 
-> For humans and AI agents. Describes what the system is and how it runs.
-> Design rules: see `docs/DESIGN.md`.
-> Version: root `VERSION` file (currently **1.0.1**).
+> 讲什么：系统的分层、目录、视图与前后端边界。运行命令见 [README](../README.md)，日志如何加载与缓存见 [DATA-FLOW](DATA-FLOW.md)，编码约束见 [DESIGN](DESIGN.md)。
 
-## Purpose
+## 技术栈
 
-Internal log browser. Reads log files from a LogIndex-compatible HTTP service
-(`{baseUrl}/{host}/{app}/...`, `baseUrl` from `config/logs.json`) via a local
-Python proxy, with optional Basic Auth. Does **not** persist viewed logs to disk.
+| 层次 | 技术 |
+| --- | --- |
+| 前端 | Vue 3 + Vite + Element Plus（按需引入） |
+| 后端 | `server.py`，单进程托管构建产物、代理、下载与访问统计 API |
+| 配置 | `config/logs.json`、`config/access.json`、根目录 `.env` |
+| 数据 | 日志来自远端 LogIndex 服务；访问统计存 SQLite `data/access.db` |
+| 运维 | `manage.py` / `manage.bat` |
 
-## Stack
+前端只与同源后端通信，不直连 LogIndex。绝大多数界面改动无需改后端。
 
-| Layer | Tech |
-|-------|------|
-| Frontend | Vue 3 + Vite + Element Plus（按需） |
-| Backend | `server.py`（config + proxy + download + access 统计） |
-| Config | `config/logs.json`、`config/access.json` |
-| Access DB | SQLite `data/access.db` |
-| Ops | `manage.py` / `manage.bat` |
+## 分层
 
-Backend need not change for most UI/nav work. Frontend talks to:
-- `GET /config/logs.json`
-- `GET /api/proxy?url=...&tail=...` (HTTP Range tail download)
-- `GET /api/download?url=...&file=...` (整文件流式下载)
-- `/api/access/*`（在线 / 埋点 / 统计，见 `docs/ACCESS.md`）
-
-### 下载端点
-
-`/api/download` 与 `/api/proxy` 分开：下载不带 `tail`，超时 300s（目录探测保持 8s），
-响应带 `Content-Disposition: attachment` 与 `X-Total-Size`，复用 Basic 凭据与 64KB
-分块转发。**路由必须排在 `do_GET` 的 SPA fallback 之前**，否则会被改写成 index.html。
-前端 `utils/logDownload.js` 用 `fetch().body.getReader()` 逐片读取 → 累积字节分片 →
-`Blob` → 临时 `<a download>`，支持进度回调与 `AbortController` 取消。读取与落盘分离，
-预留 HTTP Range 分片 / 断点续传替换点。
-
-## Directory map
-
-```
-log-viewer/
-├── config/
-│   ├── logs.json             # envs → services (host/app/levels)
-│   └── access.json           # 访问统计开关 / IP 白名单 / 保留天数
-├── access_store.py           # SQLite 会话 + 事件
-├── data/access.db            # 运行时生成（gitignore）
-├── server.py                 # proxy + download + config + access API
-├── manage.py                 # start/stop/status/logs menu
-├── docs/
-│   ├── SYSTEM.md             # this file
-│   ├── DESIGN.md             # coding / architecture rules
-│   └── ACCESS.md             # 访问统计说明
-└── frontend/
-    ├── tests/                # node --test 纯函数用例 + 性能基准
-    └── src/
-        ├── App.vue           # 三栏壳：NavPrimary | NavSecondary? | main
-        ├── components/
-        │   ├── nav/          # L1 / L2 导航
-        │   ├── viewer/       # LogViewer / LogFilterBar / LogFoldBar / LogContextDialog
-        │   ├── dashboard/    # Dashboard
-        │   ├── stats/        # AccessStats
-        │   └── settings/     # SettingsModal
-        ├── composables/
-        │   ├── useLogs.js
-        │   ├── useNavigation.js
-        │   ├── useSettings.js
-        │   ├── useLogViewFilters.js
-        │   ├── usePresence.js
-        │   └── useAccessLog.js
-        ├── constants/
-        │   ├── logLevels.js
-        │   ├── logHighlightRules.js
-        │   ├── logFileRules.js     # 文件名匹配规则
-        │   ├── logContextConfig.js # 上下文默认值 / 区间
-        │   └── themes.js           # 主题 / 日志区色板
-        ├── utils/
-        │   ├── logParser.js        # 着色引擎
-        │   ├── logFileIndex.js     # 索引持久化
-        │   ├── logEntries.js       # 条目归并 / 过滤 / 搜索索引
-        │   ├── logViewRows.js      # 折叠展平 / 行高布局
-        │   ├── logProcessClient.js # Worker 命令协议 + 同步回退
-        │   ├── logFilterMatch.js   # 过滤匹配 / 条件预编译
-        │   ├── logContextWindow.js # 上下文窗口推进
-        │   ├── logDownload.js      # 分片流式下载
-        │   ├── logTextMetrics.js   # 文本列宽 / 视觉行数
-        │   ├── logVirtualLayout.js # 虚拟列表高度表
-        │   ├── dirListing.js       # 目录 HTML 抽文件名
-        │   └── color.js            # 色运算
-        ├── workers/
-        │   └── logProcess.worker.js
-        └── styles/global.css
+```mermaid
+flowchart TD
+    A[配置文件 logs.json / access.json / .env] --> B[server.py<br/>代理 下载 配置 access API]
+    B --> C[utils/apiClient.js<br/>超时 取消 错误体解析]
+    C --> D[composables<br/>模块级单例状态与编排]
+    D --> E[components<br/>四个视图与交互]
+    D --> F[utils + constants<br/>纯函数引擎与规则]
+    F --> G[workers/logProcess.worker.js<br/>大日志分组与增量查询]
+    E --> H[styles/global.css<br/>语义 token 与 v-html 样式]
 ```
 
-Proxy Basic Auth：根目录 `.env`（见 `.env.example`）或环境变量 `LOG_VIEWER_USER` / `LOG_VIEWER_PASS`（或 `LOGINDEX_*`）；CLI `--user`/`--password` 可覆盖。无内置默认账号。`.env` 已 gitignore。
+各层职责与禁止事项见 [DESIGN.md](DESIGN.md)。要点：
 
-## Navigation (UI) — 三栏
+- `composables` 是共享状态的唯一来源，模块级单例，组件之间不靠父子 ref 传递导航状态。
+- `utils` 与 `constants` 不依赖 Vue；`workers` 常驻大日志数据，只接收命令。
+- `components` 只做渲染与本地交互；网络请求经 `apiClient` 收口。
 
-```
-| NavPrimary (L1) | NavSecondary (L2) | main        |
-| 仪表盘          | (仅日志聚合时)    | Dashboard / |
-| 日志聚合        | 环境 Tab + 模块列表 | LogViewer / |
-| 统计            |                   | AccessStats |
-```
+## 视图与导航
 
-- L1 / L2 是**两个独立侧栏**，可分别缩小（localStorage）。
-- 仪表盘 / 统计时不挂载 L2；环境 Tab 在右侧 Dashboard。
-- `useNavigation.view`: `dashboard` | `viewer` | `stats`。
-- 访问统计见 `docs/ACCESS.md`（SQLite + IP 白名单）。
+| 视图 | 组件 | 说明 |
+| --- | --- | --- |
+| 仪表盘 `dashboard` | `Dashboard.vue` | 环境切换、模块列表、探测级别、下载 |
+| 日志聚合 `viewer` | `LogViewer.vue` | 日志阅读与搜索工具区 |
+| 统计 `stats` | `AccessStats.vue` | 在线与访问事件（白名单可见） |
+| 设置 `settings` | `SettingsPage.vue` | 外观 / 字体 / 行为三分区，草稿保存后生效 |
 
-## Data flow (read path)
+- `App.vue` 用 `keep-alive` + `defineAsyncComponent` 分发，二级导航**仅在 `viewer` 挂载**。
+- 一级导航四项：仪表盘 / 日志聚合 / 统计 / 设置；两级侧栏可分别折叠（本地持久化）。
+- 地址栏 `?view=&env=&app=&host=&level=&file=` 双向同步，刷新与分享可还原，见 `useNavigation.js`。
 
-1. `useLogs.loadConfig()` → `/config/logs.json`
-2. User picks env/module/level → `useNavigation`
-3. `useLogs.fetchLog(host, app, level)` → `/api/proxy?tail=`
-4. Proxy requests LogIndex with `Range: bytes=-N` (N from settings `tailMB`)
-5. `LogViewer` slices by `maxLines`，可变行高虚拟滚动（换行开/关统一）；大日志分组/过滤走 Worker
+## 目录
 
-### Worker 协议（≥2500 行）
-
-- `setLines`：**仅在 lines 引用变化时**发送一次；Worker 常驻 lines、分组条目、
-  每条日志的小写搜索索引；视觉行数按 `(idx, wordWrap, wrapCols)` 缓存。
-- `query`：只带过滤条件与折叠/换行参数，编译过滤后展平，返回 `viewRows` +
-  `filteredRowCount`。Worker 用 `latestId` 合并连续 query，客户端作废旧 pending。
-- 小数据或 Worker 不可用：同步回退 `processLogSync`，返回结构同构。
-- `hlCache` 键已含关键词，不再随每次重建清空；`viewRows` 用 `shallowRef` 避免深度代理。
-
-### 上下文弹窗
-
-从**原始 `lines`** 以 `row.idx` 为中心取窗口，与过滤结果解耦（筛选状态下也能看到
-被隐藏的周边行）。`utils/logContextWindow.js` 负责推进：滚到边界每次追加
-`contextLazyStep` 行（默认 5），单侧上限 `contextMaxLines`（默认 50）。两重边界分别
-提示：配置上限 vs 已加载数据边界——`fetchLog` 只拉尾部，更早的行不在内存里，
-本期不联网补拉（按字节区间拉取列为二期）。
-
-## Design system
-
-现代观感由两层构成，组件不直接写死视觉参数：
-
-- `styles/global.css`：静态 token（圆角 `--r-*`、间距 `--sp-*`、动效 `--dur` / `--ease`、
-  阴影层级 `--sh-*`）、Element Plus 桥接、滚动条与全局焦点环，以及可复用原子类
-  （`.ui-surface` / `.ui-kpi` / `.ui-chip` / `.ui-icon-btn` / `.ui-empty` /
-  `.ui-toolbar-group` / `.ui-eyebrow`）。基准圆角 `--r` 为 12px。
-- `useSettings.apply()`：按主题派生阴影强度、顶边高光 `--hi`、渐变
-  `--grad-accent` / `--grad-surface` / `--grad-glow`、焦点环 `--ring` 与悬停表面
-  `--surf-*`，并覆盖 Element Plus 的圆角 / 阴影 / 过渡变量。明亮主题用浅色投影，
-  暗黑与暖色用深色投影，暖色高光偏琥珀；日志区仍保持独立深色色板。
-
-三套主题共用同一套语义 token，新增组件只引用 token 即可自动适配；
-`frontend/tests/designTokens.test.js` 校验色板完整性、token 的 CSS fallback 与运行时注入。
-
-## Settings (browser localStorage)
-
-Key: `log_viewer_settings`
-
-Notable behavior fields:
-- `maxLines` — keep last N lines after download
-- `tailMB` — Range tail size (default 10)
-- `autoScroll` — jump to end after load
-- `wordWrap` — 自动换行（仍虚拟滚动；超大日志建议降低 maxLines）
-- `foldOverLimit` / `foldMaxLines` — 单条日志超行折叠
-- `contextInitialLines` / `contextLazyStep` / `contextMaxLines` — 上下文弹窗参数；
-  默认值与合法区间来自 `constants/logContextConfig.js`，**不触发日志重载**
-  （`needsReload` 只比较 maxLines / tailMB）。
-
-## Performance baseline
-
-`node frontend/tests/bench-filter.mjs`（10000 行、9166 条目、3 个条件、7 轮中位）：
-
-- 旧链路 `group+filter` ≈ 5.4ms，且每次条件变化还要把整个 `lines` 克隆进 Worker；
-- 新链路 `setLines` 建索引一次 ≈ 1.0ms，`query` 编译过滤 ≈ 0.9ms（约 6x）；
-- `clone(viewRows) → main` ≈ 12ms 是当前最大单项，因此 `viewRows` 用 `shallowRef`、
-  高亮缓存不再随每次重建清空、过滤交互加 60ms 防抖；目标 < 100ms。
-
-## Tests
-
-```bash
-node --test "frontend/tests/*.test.js"   # 纯函数单测，无第三方依赖
-node frontend/tests/bench-filter.mjs    # 过滤链路耗时
-cd frontend && npm run build
-python -m py_compile server.py
+```text
+frontend/src/
+├── App.vue / main.js
+├── components/
+│   ├── nav/          # NavPrimary / NavSecondary / NavViewSwitch / NavEnvModuleTree
+│   ├── viewer/       # LogViewer、LogFilterBar、LogFoldBar、LogContextDialog
+│   │                 # LogToolsDrawer、LogHighlightBar、LogFindBar、LogHistoryBar
+│   ├── dashboard/    # Dashboard
+│   ├── stats/        # AccessStats
+│   └── settings/     # SettingsPage + Appearance / Typography / Behavior
+├── composables/      # useLogs / useNavigation / useSettings / useLogViewFilters
+│                     # useLogSearchTools / usePresence / useAccessLog / useToast
+├── constants/        # logLevels / logFileRules / logHighlightRules / logContextConfig
+│                     # themes / timing / settingsOptions / logSearchTools / version
+├── utils/            # apiClient / logParser / logEntries / logViewRows / logProcessClient
+│                     # logFilterMatch / logFind / logVirtualLayout / logFileIndex
+│                     # highlightTerms / toolDrawerState / filterHistory / logDownload
+│                     # logContextWindow / logTextMetrics / dirListing / color
+├── workers/          # logProcess.worker.js
+└── styles/           # global.css（静态 token、UI 原子类、v-html 样式）
 ```
 
-## Run
+单测与性能基准在 `frontend/tests/`（无第三方测试依赖）。
 
-单进程（无需 Nginx）：`server.py` 托管 `frontend/dist` + API。
+## 后端边界
 
-```bash
-python manage.py          # interactive
-python manage.py start    # single process on :8090
-python manage.py build    # npm run build → frontend/dist
-python manage.py shortcut # desktop launcher bat
-python manage.py dev      # optional: :8090 API + Vite :5173
-```
+| 端点 | 用途 |
+| --- | --- |
+| `GET /config/logs.json` | 环境与服务配置；`access.json` 明确拒绝对外提供 |
+| `GET /api/proxy?url=&tail=` | 加 Basic Auth 与 `Range: bytes=-N`，流式回传日志尾部与 `X-Total-Size` / `X-Truncated` |
+| `GET /api/download?url=&file=` | 不带 tail，整文件流式下载，带附件头与总大小 |
+| `POST /api/access/hello\|ping\|event` | 在线心跳与操作埋点 |
+| `GET /api/access/me\|online\|recent\|summary` | 统计查询，后三者仅白名单 IP |
 
-Open http://localhost:8090
+`/api/download` 的路由必须排在 SPA fallback 之前；只有 `/assets/` 下带 hash 的构建产物设置了 7 天强缓存，**代理响应不缓存日志正文**。
+
+## 本地持久化
+
+| 键 | 存储 | 用途 |
+| --- | --- | --- |
+| `log_viewer_settings` | localStorage | 主题、字体、阅读行为 |
+| `log_viewer_settings_init` / `log_viewer_wordwrap_on_v1` | localStorage | 首次初始化、旧设置迁移标志 |
+| `log_viewer_nav_l1_collapsed` / `log_viewer_nav_l2_collapsed` | localStorage | 两级导航折叠 |
+| `log_viewer_file_index_v1` | localStorage | 文件名与级别索引，按日软刷新、跨标签失效 |
+| `log_viewer_filter_history` | localStorage | 过滤条件历史（最多 15 条） |
+| `log_viewer_tools_drawer_v1` | localStorage | 搜索工具抽屉是否固定 |
+| `log_viewer_access_sid` | sessionStorage | 在线会话标识 |
+
+日志正文不在表中：它只在内存里短期缓存，详见 [DATA-FLOW.md](DATA-FLOW.md)。
+
+## 相关文档
+
+[功能清单](FEATURES.md) · [数据链路](DATA-FLOW.md) · [设计规范](DESIGN.md) · [访问统计](ACCESS.md) · [变更记录](CHANGELOG.md)

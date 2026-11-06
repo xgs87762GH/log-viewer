@@ -1,134 +1,119 @@
-# DESIGN — rules for humans & AI
+# 设计规范
 
-Short constraints. Prefer following these over inventing new patterns.
+> 讲什么：改代码时应当遵守的分层、状态与界面约束。系统全貌见 [SYSTEM](SYSTEM.md)，日志链路见 [DATA-FLOW](DATA-FLOW.md)。以下规则优先于临时发挥。
 
-## Goals
+## 目标
 
-High cohesion, low coupling, clear layers, readable code. No backend change
-unless proxy/config API must change.
+高内聚、低耦合、层次清晰、代码可读。除非代理或配置 API 必须改动，不动后端。
 
-## Layers (do not cross)
+## 分层（不得越界）
 
-| Layer | Owns | Must not |
-|-------|------|----------|
-| `config/logs.json` | env/service catalog | UI logic |
-| `server.py` | proxy, serve config | Vue/nav/theme |
-| `composables/*` | shared state & domain ops | heavy DOM/CSS layout helpers |
-| `components/*` | render + local UI state | raw fetch to LogIndex |
-| `constants` | 可扩展配置（规则 / 色板 / 级别） | Vue reactivity / HTTP |
-| `utils` | 纯函数引擎 / 持久化 / 解析 | Vue / 业务编排副作用 |
-| `constants/logHighlightRules.js` | 日志着色规则唯一配置 | 渲染 / 过滤逻辑 |
-| `constants/logFileRules.js` | 日志**文件名**匹配规则唯一配置 | 网络请求 / UI |
-| `constants/logContextConfig.js` | 上下文默认值 / 区间 / 夹紧 | Vue / HTTP |
-| `constants/themes.js` | 主题 / 日志区色板 | DOM 写入 |
-| `utils/logParser.js` | 执行着色规则的引擎 | 内嵌业务正则（应写在 rules） |
-| `utils/logFileIndex.js` | 文件名索引：持久化 / 按日刷新 / 合并 | HTTP / Vue / UI |
-| `utils/logEntries.js` | 条目归并 / 文本过滤 / 搜索索引 | Vue |
-| `utils/logViewRows.js` | 折叠展平 / 视觉行估算 | Vue |
-| `utils/logContextWindow.js` | 上下文窗口推进（含双边界判定） | Vue / DOM / 网络 |
-| `utils/logDownload.js` | 分片流式读取 + Blob 落盘机制 | URL 构造 / 埋点 / toast |
-| `utils/logFilterMatch.js` | 过滤匹配与条件预编译 | Vue |
-| `utils/logProcessClient.js` | Worker 命令协议与同步回退 | Vue |
-| `utils/dirListing.js` | 目录 HTML 抽文件名 | 命名规则 |
-| `utils/color.js` | 色混合 / alpha | DOM |
-| `workers/logProcess.worker.js` | 常驻 lines / 条目 / 索引；按 query 出 viewRows | DOM / Vue |
-| `components/viewer/LogContextDialog.vue` | 上下文弹窗渲染 + 懒加载交互 | 直接请求日志 / 修改 lines |
+| 层 | 负责 | 不得做 |
+| --- | --- | --- |
+| `config/logs.json` | 环境与服务目录 | 界面逻辑 |
+| `server.py` | 代理、下载、配置托管、访问统计 API | Vue / 导航 / 主题 |
+| `utils/apiClient.js` | 超时、信号组合、错误体解析 | 业务编排 |
+| `composables/*` | 共享状态与业务编排 | 重度 DOM / 布局计算 |
+| `components/*` | 渲染与本地交互 | 直连 LogIndex |
+| `constants/*` | 可扩展规则、色板、级别、时序常量 | Vue 响应式 / HTTP |
+| `utils/*` | 纯函数引擎、解析、持久化 | Vue / 业务副作用 |
+| `workers/*` | 常驻大日志数据，按命令产出视图行 | DOM / Vue |
+| `styles/global.css` | 静态 token、UI 原子类、v-html 样式 | 组件私有状态 |
 
-## Composables = single source of truth
+关键模块的单一职责：
 
-- Module-level singleton: `useLogs`, `useNavigation`, `useSettings`.
-- Components communicate **only** via composables (no parent↔child refs for nav).
-- `useNavigation`: view / env / selectedIdx / selectedLevel / routeFile；
-  地址栏 `?view=&env=&app=&host=&level=&file=` 双向同步，刷新可还原。
-- `useLogs`: config, URL build, fetchLog, 目录探测编排；
-  文件名匹配 → `logFileRules`；目录 HTML → `dirListing`；索引 → `logFileIndex`。
-  `discoverLevels` 默认不自动批量。仪表盘「探测级别」可手动串行；打开日志时
-  单服务探测（有缓存）；404 回退时单次探测。服务可在 `logs.json` 用 `logFile`
-  覆盖命名（preset 或自定义 active/archive 模板）。
-  索引按模块（host|app）：每次点开只判断「今日是否已刷新」，未刷新才后台软扫；
-  「重新探测」全量覆盖并更新刷新时间。
-  `getLevels` 会 hydrate localStorage；force/404 失败不抹掉旧索引，避免切视图后
-  级别按钮回退到配置全量。
-- Log 正文：只在用户打开/切换/点刷新时 `fetchLog`，**无轮询**。
-- 正文过滤：`useLogViewFilters` + `components/viewer/LogFilterBar`
-  （Grafana 风格芯片：∋ 包含 / ≠ 排除，多条件 AND；整条日志匹配）。
-- `useSettings`: cfg 持久化 + `apply` 写 CSS 变量；色板来自 `constants/themes`。
-- 下载 URL 只由 `useLogs.buildDownloadUrl` 构造（同源 `/api/download`）；
-  **组件不得直连 LogIndex**，仪表盘下载按钮走 `useLogs.downloadLogFile`。
-- 上下文弹窗的数据源是原始 `lines`，锚点是 `row.idx`；**不得**取过滤后的
-  `viewRows`，否则筛选状态下看不到被隐藏的周边行。
-- Worker 协议：`setLines` 仅在 lines 引用变化时发送，`query` 携带条件与展示参数；
-  两端保持 `viewRows` / `filteredRowCount` 结构一致，同步回退路径同构。
+| 文件 | 唯一职责 |
+| --- | --- |
+| `constants/logFileRules.js` | 日志**文件名**匹配规则 |
+| `constants/logHighlightRules.js` | 日志着色规则 |
+| `constants/logContextConfig.js` | 上下文默认值与区间夹紧 |
+| `constants/logSearchTools.js` | 搜索工具区常量与高亮 class 白名单 |
+| `constants/themes.js` | 主题与日志区色板 |
+| `utils/logParser.js` | 执行着色规则，追加高亮时只替换纯文本片段 |
+| `utils/logFileIndex.js` | 文件名索引的持久化、按日刷新与合并 |
+| `utils/logEntries.js` | 条目归并、过滤与搜索索引 |
+| `utils/logViewRows.js` | 折叠展平与视觉行数 |
+| `utils/logVirtualLayout.js` | 高度表与二分查找 |
+| `utils/logProcessClient.js` | Worker 命令协议与同步回退 |
+| `utils/logFind.js` / `highlightTerms.js` / `toolDrawerState.js` | 查找、高亮词条、抽屉状态的纯函数 |
+| `utils/filterHistory.js` / `logDownload.js` / `logContextWindow.js` | 过滤历史、流式下载、上下文窗口推进 |
 
-## Feature folders under `components/`
+## 状态唯一来源
 
-```
+所有 composable 都是**模块级单例**，组件之间不靠父子 ref 传递共享状态：
+
+`useLogs`、`useNavigation`、`useSettings`、`useLogViewFilters`、`useLogSearchTools`、`usePresence`、`useAccessLog`、`useToast`。
+
+- `useNavigation`：视图 / 环境 / 服务 / 级别 / 文件；地址栏双向同步，刷新可还原。
+- `useLogs`：配置、URL 构造、拉正文、目录探测。**构造 URL 与缓存键必须显式传 `envKey`**；索引按模块持久化，打开时只判断「今日是否已刷新」，失败不抹掉旧索引；日志正文无轮询，只在打开 / 切换 / 刷新时拉取。
+- `useLogViewFilters` 与 `useLogSearchTools` 严格隔离：过滤词进 `includeTerms` / `excludeTerms` 并触发 Worker 过滤；**高亮词与查找词绝不混入过滤条件**，只负责染色与定位。
+- `useSettings`：配置持久化 + 写入 CSS 变量；`needsReload` 只比较 `maxLines` / `tailMB`。
+- 下载 URL 只由 `useLogs.buildDownloadUrl` 构造，组件不得直连 LogIndex。
+- 上下文弹窗数据源是原始 `lines`，锚点是 `row.idx`，**不得取过滤后的 `viewRows`**。
+- Worker 协议：`setLines` 仅在 `lines` 引用变化时发送；`query` 只带条件与展示参数；两端保持 `{ viewRows, filteredRowCount }` 同构，同步回退路径同样如此。
+- 搜索工具抽屉只持久化「是否固定」；未固定时切走视图或点击抽屉外部自动收起，固定态豁免。
+
+## 功能目录
+
+```text
 components/
-  nav/         # L1 / L2 导航
-  viewer/      # LogViewer + LogFilterBar + LogContextDialog + LogFoldBar
-  dashboard/   # Dashboard
-  stats/       # AccessStats
-  settings/    # SettingsModal
+├── nav/         # NavPrimary / NavSecondary / NavViewSwitch / NavEnvModuleTree
+├── viewer/      # LogViewer + 工具抽屉、过滤、高亮、查找、历史文件、折叠、上下文
+├── dashboard/   # Dashboard
+├── stats/       # AccessStats
+└── settings/    # SettingsPage + Appearance / Typography / Behavior
 ```
 
-- When adding nav UI, put it under `components/nav/`.
-- Viewer-only UI → `components/viewer/`（开闭：加过滤条/历史条不污染 dashboard）。
+新增导航 UI 放 `nav/`，仅日志页使用的控件放 `viewer/`，避免污染其它视图。
 
-## Navigation shape（三栏独立）
+## 导航形状
 
+```text
+App 外壳
+  ├─ NavPrimary     # 栏 1：仪表盘 | 日志聚合 | 统计 | 设置（可折叠）
+  ├─ NavSecondary   # 栏 2：仅 viewer 挂载 — 环境 › 模块（可折叠）
+  └─ main           # 栏 3：四个视图（keep-alive）
 ```
-App shell
-  ├─ NavPrimary      # 栏1：仪表盘 | 日志聚合 | 统计（可缩小）
-  ├─ NavSecondary    # 栏2：仅 viewer — 环境›模块（可缩小，可整栏卸载）
-  └─ main            # 栏3：Dashboard | LogViewer | AccessStats
-```
 
-- 不要再把 L1/L2 塞进同一个 Sidebar。
-- L1 labels: 仪表盘 / 日志聚合 / 统计（code: `dashboard` / `viewer` / `stats`）。
-- Collapse: `navL1Collapsed` / `navL2Collapsed`。
-- 访问统计：`usePresence` + `useAccessLog` + `AccessStats`；配置见 `config/access.json`，详设 `docs/ACCESS.md`。
-- Selecting a module under another env: use `selectEnvService(env, idx)` or
-  `openLog(idx, level, env)` — never `selectEnv` then `selectService` in two
-  ticks (idx would reset).
+- L1 / L2 是两个独立侧栏，不要合并进同一个 Sidebar。
+- 折叠状态键：`log_viewer_nav_l1_collapsed` / `log_viewer_nav_l2_collapsed`。
+- 跨环境选模块用 `selectEnvService(env, idx)` 或 `openLog(idx, level, env)`，不要分两拍先 `selectEnv` 再 `selectService`（索引会被重置）。
 
-## UI rules
+## 界面规则
 
-- Layout shell stays three columns; restyle with **Element Plus** (on-demand via unplugin).
-- Keep log line rendering in `global.css` (v-html cannot use scoped EP styles).
-- Toasts: `useToast` → `ElMessage` only (do not full-register Element Plus).
-- Dashboard lists modules; L2 nav is for switching while reading.
-- Do not duplicate the full module grid in the sidebar on dashboard.
-- Level colors: global classes `.lvl-*` / `.ln-*` in `global.css` (v-html safe).
-- Loading: newest request wins (sequence token); scroll-to-end only **after**
-  `loading === false` and DOM painted.
-- Toolbar 不做级别二次过滤（文件已按 level 区分）；正文用文本过滤条。
-- 行操作项 hover 才出现，**绝不撑开行高**（`.ln` 为 flex + `overflow:hidden`）。
-- 设计令牌唯一来源：`styles/global.css`（静态 fallback / UI 原子类 / Element Plus 桥接）
-  + `useSettings.apply()`（按主题派生阴影、渐变、高光、焦点环并注入 EP 变量）。
-- 组件只消费语义 token（`--r*` / `--sp*` / `--sh*` / `--grad-*` / `--surf-*` / `--dur`），
-  **不得写死颜色、圆角、阴影与过渡时长**；新增表面效果先加 token。
-- 可复用 UI 原子类在 `global.css`：`.ui-surface` / `.ui-kpi` / `.ui-chip` /
-  `.ui-icon-btn` / `.ui-empty` / `.ui-toolbar-group` / `.ui-eyebrow`；scoped 组件可直接引用。
-- Icon-only 控件必须同时有 `el-tooltip` 与 `aria-label`；所有交互元素保留 `focus-visible`。
+- 组件只消费语义 token（`--r*` / `--sp*` / `--sh*` / `--grad-*` / `--surf-*` / `--dur` / `--t*`），**不得写死颜色、圆角、阴影与过渡时长**；新表面效果先加 token。
+- 静态 token、`Element Plus` 桥接与可复用原子类只在 `global.css`：`.ui-eyebrow` / `.ui-grad-text` / `.ui-surface` / `.ui-kpi*` / `.ui-chip*` / `.ui-dot*` / `.ui-icon-btn` / `.ui-empty*` / `.ui-toolbar-group` / `.ui-divider-v`。
+- 图标按钮必须同时有 `el-tooltip` 与 `aria-label`；所有交互元素保留 `focus-visible`。
+- 提示只用 `useToast`（按需引入 `ElMessage`），不要全量注册 Element Plus。
+- **v-html 产出的样式必须写在 `global.css`**：日志行、级别色、三层高亮（`hit` / `hl` / `find-hit`）与当前命中行都依赖它。追加高亮只接受 class 白名单，防止注入。
+- 行操作项 hover 才出现，绝不撑开行高；工具条不做级别二次过滤（文件已按级别区分）。
+- 加载以「最新请求胜出」（序号令牌）为准；滚到末尾只在加载完成且 DOM 绘制后执行。
+- 全局快捷键在 `keep-alive` 下仍会触发，处理前必须判断当前处于 `viewer` 视图。
+- 高亮 HTML 缓存键要包含过滤词、高亮词与查找词；`viewRows` 用 `shallowRef` 避免深度代理。
 
-## Change checklist
+## 变更检查清单
 
-1. Config-only? → edit `config/logs.json` only.
-2. Nav/UI? → composable first if state shared; component if presentational.
-3. Fetch/tail/maxLines? → `useLogs` + `useSettings`, not hardcoded in Vue.
-4. Avoid new global stores (Pinia/Vuex) unless composables clearly fail.
-5. Keep comments short; explain **why** / boundaries, not narrate code.
-6. Update `docs/SYSTEM.md` if architecture or nav hierarchy changes.
-7. New pure algorithm? → `utils/`；new 可扩展规则? → `constants/`。
-8. Verify: `cd frontend && npm run build`、`python -m py_compile server.py`、
-   `node --test "frontend/tests/*.test.js"`、`node frontend/tests/bench-filter.mjs`。
+1. 只改配置？→ 只动 `config/logs.json`。
+2. 导航 / 界面？→ 共享状态先落 composable，纯展示才写组件。
+3. 拉取 / 尾部 / 行数上限？→ 改 `useLogs` + `useSettings`，不要在 Vue 里写死。
+4. 不引入全局状态库（Pinia / Vuex），除非 composable 明显不够用。
+5. 注释简短，解释「为什么」与边界，不复述代码。
+6. 架构或导航变化 → 同步 `docs/SYSTEM.md`；功能变化 → `docs/FEATURES.md`；链路变化 → `docs/DATA-FLOW.md`。
+7. 新算法放 `utils/`，新可扩展规则放 `constants/`。
+8. 验证：`npm --prefix frontend run build`、`node --test "frontend/tests/*.test.js"`、`python -m py_compile server.py`、`node frontend/tests/bench-filter.mjs`。
 
-## Anti-patterns
+## 反模式
 
-- Fetching LogIndex URLs directly from a component (bypass proxy).
-- Storing viewed log files on disk by default.
-- Mixing L1 view switch and L2 env/module tree in one giant template without split.
-- Silent hard caps that ignore user settings (document or expose in Settings).
-- Putting theme palettes / HTML directory parsing inside composables.
-- Treating filtered `viewRows` as the data source for log context.
-- Sending the whole `lines` array to the Worker on every filter change.
+- 组件里直接请求 LogIndex 地址（绕过代理）。
+- 默认把看过的日志文件写到磁盘；把日志正文塞进 localStorage。
+- 把 L1 视图切换与 L2 模块树揉进一个巨型模板。
+- 静默硬上限且忽略用户设置（要么写进设置，要么写明）。
+- 主题色板或目录 HTML 解析放进 composable。
+- 用过滤后的 `viewRows` 当上下文弹窗的数据源。
+- 每次过滤都把整个 `lines` 重新发给 Worker。
+- 高亮词或查找词混入过滤条件，触发本不该发生的 Worker 过滤。
+- 正文缓存键漏掉 `envKey` 或 `maxLines` / `tailMB`，导致跨环境或改设置后复用错误内容。
+
+## 相关文档
+
+[系统架构](SYSTEM.md) · [功能清单](FEATURES.md) · [数据链路](DATA-FLOW.md) · [访问统计](ACCESS.md) · [变更记录](CHANGELOG.md)
