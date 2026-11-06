@@ -215,6 +215,30 @@ body {
   box-shadow: 0 0 0 1px color-mix(in srgb, #f0c000 55%, transparent);
 }
 
+/* ══ 独立高亮 / 查找命中 / 当前定位行：v-html 产出，样式必须全局 ══ */
+.ln mark.hl {
+  background: color-mix(in srgb, var(--trc) 42%, transparent);
+  color: var(--log-fg);
+  border-radius: 2px;
+  padding: 0 2px;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--trc) 60%, transparent);
+}
+.ln mark.find-hit {
+  background: color-mix(in srgb, var(--ac) 34%, transparent);
+  color: var(--log-fg);
+  border-radius: 2px;
+  padding: 0 2px;
+  font-weight: 600;
+}
+/* 关键词重叠时不让嵌套 mark 叠加背景 */
+.ln mark mark { background: transparent; box-shadow: none; padding: 0; font-weight: inherit }
+.ln.ln-find-current {
+  background: color-mix(in srgb, var(--ac) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--ac), inset 0 0 0 1px color-mix(in srgb, var(--ac) 34%, transparent);
+}
+.ln.ln-find-current:hover { background: color-mix(in srgb, var(--ac) 18%, transparent) }
+
 /* ══ 行上下文操作项：hover 出现，绝对定位，绝不撑开行高 ══ */
 .ln { position: relative }
 .ln-ctx-btn {

@@ -66,6 +66,9 @@
       />
 
       <div class="fb-actions" @click.stop>
+        <span v-if="resultCount != null" class="fb-count" title="过滤后可见行数">
+          {{ resultCount }} 行
+        </span>
         <el-button
           size="small"
           type="primary"
@@ -145,6 +148,10 @@
  */
 import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
 import { useLogViewFilters } from '../../composables/useLogViewFilters'
+
+defineProps({
+  resultCount: { type: Number, default: null },
+})
 
 const {
   textFilters,
@@ -307,29 +314,29 @@ onBeforeUnmount(() => clearTimeout(blurTimer))
 </script>
 
 <style scoped>
+/* 抽屉内占满分区列，不再需要旧的 flex:1 / max-width 约束 */
 .filter-wrap {
   position: relative;
-  flex: 1;
-  min-width: 220px;
-  max-width: min(720px, 100%);
+  width: 100%;
+  min-width: 0;
 }
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-1);
   min-height: 32px;
-  padding: 4px 8px;
+  padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--bd);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--s1);
   cursor: text;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .filter-bar.focused,
 .filter-bar.open {
-  border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--el-color-primary) 35%, transparent);
+  border-color: var(--ac);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 .fb-label {
   font-size: 12px;
@@ -456,27 +463,26 @@ onBeforeUnmount(() => clearTimeout(blurTimer))
   border-radius: var(--r-xs);
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
-.fb-panel-clear:hover { color: var(--ac); background: var(--surf-hover) }
+.fb-panel-clear:hover { color: var(--err); background: var(--surf-hover) }
 .fb-op:hover { color: var(--ac); text-decoration: none }
-.fb-panel-clear:hover { color: var(--err); }
 .fb-hist {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   border: none;
   background: transparent;
   color: var(--t1);
   text-align: left;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
   cursor: pointer;
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
 }
 .fb-hist:hover,
 .fb-hist.active {
-  background: color-mix(in srgb, var(--ac) 12%, transparent);
+  background: var(--surf-active);
 }
 .fb-hist-label {
   flex: 1;
@@ -489,6 +495,13 @@ onBeforeUnmount(() => clearTimeout(blurTimer))
 .fb-hist-time {
   flex-shrink: 0;
   color: var(--t3);
-  font-size: 11px;
+  font-size: var(--fs-xs);
+}
+.fb-count {
+  flex-shrink: 0;
+  margin-right: var(--sp-1);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--t3);
 }
 </style>

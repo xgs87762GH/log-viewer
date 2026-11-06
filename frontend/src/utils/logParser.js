@@ -183,3 +183,50 @@ function applySearch(html, search) {
     return html
   }
 }
+
+/** v-html 追加高亮时只允许这两个 class，杜绝把用户输入拼进属性 */
+const EXTRA_HIGHLIGHT_CLASSES = new Set(['hl', 'find-hit'])
+
+/**
+ * 在 highlightLine 产出的 HTML 上追加独立文本高亮（不过滤、不进 Worker）。
+ * 只替换纯文本片段：已有 <mark> 整块与所有标签原样保留，避免嵌套与 XSS。
+ * @param {string} html 已转义的日志 HTML
+ * @param {Array<{terms: string|string[], className: string}>} groups
+ */
+export function applyTextHighlights(html, groups = []) {
+  const entries = []
+  for (const group of groups || []) {
+    const className = String(group?.className ?? '')
+    if (!EXTRA_HIGHLIGHT_CLASSES.has(className)) continue
+    const terms = Array.isArray(group.terms) ? group.terms : [group.terms]
+    for (const raw of terms) {
+      const term = String(raw ?? '').trim()
+      if (!term) continue
+      const dup = entries.some(
+        (e) => e.term.toLowerCase() === term.toLowerCase() && e.className === className,
+      )
+      if (!dup) entries.push({ term, className })
+    }
+  }
+  if (!entries.length) return html
+
+  // 长词优先，减少短词先把长词拆开
+  entries.sort((a, b) => b.term.length - a.term.length)
+  const classOf = new Map(entries.map((e) => [e.term.toLowerCase(), e.className]))
+  let re
+  try {
+    re = new RegExp('(' + entries.map((e) => escapeRegExp(e.term)).join('|') + ')', 'gi')
+  } catch {
+    return html
+  }
+  return String(html ?? '').replace(
+    /(<mark[^>]*>[\s\S]*?<\/mark>)|(<[^>]+>)|([^<]+)/g,
+    (m, existing, tag, text) => {
+      if (existing || tag) return m
+      return text.replace(re, (hit) => {
+        const className = classOf.get(hit.toLowerCase()) || entries[0].className
+        return `<mark class="${className}">${hit}</mark>`
+      })
+    },
+  )
+}

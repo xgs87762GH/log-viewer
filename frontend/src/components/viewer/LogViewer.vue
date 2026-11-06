@@ -15,7 +15,26 @@
           <span class="path-sep">/</span>
           <span class="path-file">{{ selectedFile || (nav.selectedLevel + '.log') }}</span>
         </div>
-        <LogFilterBar class="filter-slot" />
+        <el-tooltip
+          :content="tools.drawerOpen.value ? '收起搜索工具' : '展开搜索工具（Ctrl/⌘ + F）'"
+          placement="top"
+          :show-after="400"
+        >
+          <button
+            type="button"
+            class="tb-tools"
+            data-drawer-toggle
+            :class="{ on: tools.drawerOpen.value }"
+            :aria-expanded="tools.drawerOpen.value"
+            aria-label="切换搜索工具区"
+            @click="tools.toggleDrawer()"
+          >
+            <el-icon><Search /></el-icon>
+            <span>搜索工具</span>
+            <span v-if="toolBadge" class="tb-badge">{{ toolBadge }}</span>
+            <el-icon v-if="tools.drawerPinned.value" class="tb-pin"><Lock /></el-icon>
+          </button>
+        </el-tooltip>
         <div class="ui-toolbar-group tb-actions">
           <el-tooltip :content="wordWrap ? '关闭自动换行' : '开启自动换行'" placement="top" :show-after="400">
             <el-button size="small" :type="wordWrap ? 'primary' : 'default'" @click="toggleWordWrap">换行</el-button>
@@ -45,53 +64,21 @@
         </div>
       </div>
 
-      <div class="hist-bar">
-        <span class="ui-chip ui-chip--accent hist-label"><el-icon><Calendar /></el-icon> 历史日志</span>
-        <el-date-picker
-          v-model="dateFilter"
-          type="date"
-          size="small"
-          class="hist-date"
-          placeholder="按日期筛"
-          value-format="YYYY-MM-DD"
-          clearable
-        />
-        <el-select
-          v-model="selectedFile"
-          size="small"
-          class="hist-sel"
-          filterable
-          placeholder="选择文件（可输入日期检索）"
-          :loading="filesLoading"
-          @change="onFileChange"
-        >
-          <el-option
-            v-for="f in filteredLogFiles"
-            :key="f.name"
-            :label="optionLabel(f)"
-            :value="f.name"
-          >
-            <span class="file-opt">
-              <span>{{ optionLabel(f) }}</span>
-              <el-tag v-if="f.active" size="small" type="success" effect="plain">活跃</el-tag>
-            </span>
-          </el-option>
-        </el-select>
-        <el-tooltip content="强制全量扫描目录并更新本地索引" placement="top" :show-after="400">
-          <el-button
-            size="small"
-            type="primary"
-            plain
-            :icon="Refresh"
-            :loading="filesLoading"
-            aria-label="重新探测"
-            @click="refreshFileList"
-          />
-        </el-tooltip>
-        <span class="ui-chip">{{ filteredLogFiles.length }}/{{ logFiles.length }} 个文件</span>
-        <span class="hist-cache" :title="indexHint">{{ indexHint }}</span>
-        <span v-if="ruleHint" class="ui-chip hist-rule" :title="ruleHint">{{ ruleHint }}</span>
-      </div>
+      <LogToolsDrawer
+        v-show="tools.drawerOpen.value"
+        ref="drawerRef"
+        v-model:date-filter="dateFilter"
+        v-model:selected-file="selectedFile"
+        :log-files="logFiles"
+        :filtered-log-files="filteredLogFiles"
+        :files-loading="filesLoading"
+        :index-hint="indexHint"
+        :rule-hint="ruleHint"
+        :result-count="filteredRowCount"
+        @change-file="onFileChange"
+        @refresh-files="refreshFileList"
+        @step="goToFind"
+      />
 
       <div
         ref="logWrapRef"
@@ -170,6 +157,9 @@
         <span v-if="lineCapped" class="ui-chip">行数上限 {{ appliedMaxLines }}</span>
         <span class="ui-chip"><b>{{ displayLines }}</b> 行</span>
         <span class="ui-chip" :class="filteredRowCount ? 'ui-chip--accent' : ''"><b>{{ filteredRowCount }}</b> 过滤后</span>
+        <span v-if="tools.activeFindQuery.value" class="ui-chip ui-chip--accent ui-find-chip" @click="tools.openDrawer()">
+          查找 <b>{{ tools.matches.value.length ? tools.findIndex.value + 1 : 0 }}/{{ tools.matches.value.length }}</b>
+        </span>
         <span class="ui-chip"><b>{{ fmtSize(downloadedBytes) }}</b> / {{ appliedTailMB }}MB</span>
         <span class="ui-chip">文件 {{ fmtSize(size) }}</span>
         <span class="status-time"><el-icon><Clock /></el-icon> {{ updateTime }}</span>
@@ -199,13 +189,16 @@ import { useSettings } from '../../composables/useSettings'
 import { useNavigation } from '../../composables/useNavigation'
 import { useToast } from '../../composables/useToast'
 import { useLogViewFilters } from '../../composables/useLogViewFilters'
+import { useLogSearchTools } from '../../composables/useLogSearchTools'
 import { FALLBACK_LEVEL_ORDER } from '../../constants/logLevels'
-import { highlightLine } from '../../utils/logParser'
+import { FIND_HIGHLIGHT_CLASS, USER_HIGHLIGHT_CLASS } from '../../constants/logSearchTools'
+import { highlightLine, applyTextHighlights } from '../../utils/logParser'
+import { buildFindMatches, findScrollTop } from '../../utils/logFind'
 import { estimateWrapCols, baseRowHeight, readLogFontMetrics } from '../../utils/logTextMetrics'
 import { buildRowLayout, findStartIndex, findEndIndex } from '../../utils/logVirtualLayout'
 import { processLogAsync, processLogSync } from '../../utils/logProcessClient'
-import { Loading, Refresh, DocumentCopy, Document, Clock, Calendar, Search } from '@element-plus/icons-vue'
-import LogFilterBar from './LogFilterBar.vue'
+import { Loading, Refresh, DocumentCopy, Document, Clock, Search, Lock } from '@element-plus/icons-vue'
+import LogToolsDrawer from './LogToolsDrawer.vue'
 import LogFoldBar from './LogFoldBar.vue'
 import LogContextDialog from './LogContextDialog.vue'
 
@@ -217,9 +210,41 @@ const {
   includeTerms,
   excludeTerms,
   clearTextFilters,
+  textFilters,
 } = useLogViewFilters()
+const tools = useLogSearchTools()
 
 const BUFFER = 15
+
+/** 先声明视图数据：watch(findHits) 注册时会立即求值，不能让 viewRows 处于 TDZ */
+const viewRows = shallowRef([])
+const filteredRowCount = ref(0)
+
+const drawerRef = ref(null)
+
+/** 高亮词条由回车逐条添加（整串保存），与过滤词、查找词三者互不干扰 */
+const highlightTerms = computed(() => tools.highlightTerms.value)
+/** 查找命中基于过滤后的可见行；折叠占位行不参与 */
+const findHits = computed(() => buildFindMatches(viewRows.value, tools.activeFindQuery.value))
+const currentHitIdx = computed(() => tools.currentMatch()?.idx ?? -1)
+const toolBadge = computed(() =>
+  textFilters.value.length +
+  highlightTerms.value.length +
+  (tools.activeFindQuery.value ? 1 : 0),
+)
+
+/** 展开折叠条目后按原始行下标恢复定位 */
+let pendingFindIdx = -1
+
+watch(findHits, (list) => {
+  tools.setFindMatches(list)
+  if (pendingFindIdx < 0) return
+  const i = list.findIndex((m) => m.idx === pendingFindIdx)
+  pendingFindIdx = -1
+  if (i < 0) return
+  tools.findIndex.value = i
+  scrollToMatch(list[i])
+})
 
 const logWrapRef = ref(null)
 const autoScroll = ref(true)
@@ -248,9 +273,6 @@ const ruleHint = ref('')
 const indexHint = ref('索引未建立')
 
 const expandedIds = ref(new Set())
-
-const viewRows = shallowRef([])
-const filteredRowCount = ref(0)
 
 /** 上下文锚点是原始行下标，与过滤后的 viewRows 完全解耦 */
 const context = ref({ open: false, centerIdx: 0, meta: {} })
@@ -298,11 +320,6 @@ const endIdx = computed(() => {
 })
 const offsetY = computed(() => layout.value.offsets[startIdx.value] || 0)
 
-function optionLabel(f) {
-  if (f.active) return `当前（${f.name}）`
-  return f.idx != null && f.idx > 0 ? `${f.date} #${f.idx}` : (f.date || f.name)
-}
-
 function fmtRefreshTime(ts) {
   if (!ts) return ''
   try {
@@ -342,14 +359,16 @@ function refreshWrapCols() {
   document.documentElement.style.setProperty('--row-h', baseRowH.value + 'px')
 }
 
-function paintRow(row, kw, pxH) {
+function paintRow(row, ctx, pxH) {
   if (row.kind === 'fold') return { ...row, pxH }
-  const show = row.text
-  const kwKey = Array.isArray(kw) ? kw.join('\0') : ''
-  const cacheKey = row.key + '|' + kwKey
+  const cacheKey = row.key + '|' + ctx.cacheKey
   let html = hlCache.get(cacheKey)
   if (html == null) {
-    html = safeHighlight(show, row.level, kw)
+    const base = safeHighlight(row.text, row.level, ctx.filterTerms)
+    html = applyTextHighlights(base, [
+      { terms: ctx.highlightTerms, className: USER_HIGHLIGHT_CLASS },
+      { terms: ctx.findTerms, className: FIND_HIGHLIGHT_CLASS },
+    ])
     if (hlCache.size > 800) hlCache.clear()
     hlCache.set(cacheKey, html)
   }
@@ -357,13 +376,21 @@ function paintRow(row, kw, pxH) {
 }
 
 const renderedRows = computed(() => {
-  const kws = includeTerms.value
+  const filterTerms = includeTerms.value
+  const hl = highlightTerms.value
+  const findTerm = tools.activeFindQuery.value
+  const ctx = {
+    filterTerms,
+    highlightTerms: hl,
+    findTerms: findTerm ? [findTerm] : [],
+    cacheKey: [...filterTerms, ...hl, findTerm].join('\0'),
+  }
   const { heights } = layout.value
   const result = []
   for (let i = startIdx.value; i < endIdx.value; i++) {
     const row = viewRows.value[i]
     if (!row) continue
-    result.push(paintRow(row, kws, heights[i] || baseRowH.value))
+    result.push(paintRow(row, ctx, heights[i] || baseRowH.value))
   }
   return result
 })
@@ -375,7 +402,30 @@ function rowClass(row) {
     row.abbr ? 'ln-' + row.abbr : '',
     wordWrap.value ? 'wrap' : '',
     row.clipped ? 'clipped' : '',
+    row.idx === currentHitIdx.value ? 'ln-find-current' : '',
   ]
+}
+
+/** 查找步进：命中行在折叠条目内时先展开，viewRows 重建后按原始 idx 恢复定位 */
+function goToFind(delta = 1) {
+  if (!tools.matches.value.length) return
+  const match = tools.stepFind(delta)
+  if (!match) return
+  const row = viewRows.value[match.rowIndex]
+  if (row?.clipped && row.entryId != null) {
+    pendingFindIdx = match.idx
+    expandEntry(row.entryId)
+    return
+  }
+  scrollToMatch(match)
+}
+
+function scrollToMatch(match) {
+  const el = logWrapRef.value
+  if (!el) return
+  const y = findScrollTop(layout.value.offsets, match.rowIndex, viewportH.value)
+  el.scrollTop = y
+  scrollTop.value = y
 }
 
 function expandEntry(id) {
@@ -851,6 +901,30 @@ let unsubIndex = null
 let unsubSettings = null
 let onWinResize = null
 
+/** keep-alive 下组件不卸载，快捷键需确认当前仍处于日志视图，避免干扰其它视图 */
+function onGlobalKeydown(e) {
+  if (nav.view !== 'viewer' || !nav.currentService) return
+  const target = e.target
+  const inEditable = target?.tagName === 'INPUT'
+    || target?.tagName === 'TEXTAREA'
+    || target?.isContentEditable === true
+  if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'f') {
+    e.preventDefault()
+    tools.openDrawer()
+    nextTick(() => drawerRef.value?.focusFind?.())
+    return
+  }
+  if (e.key === 'F3') {
+    e.preventDefault()
+    tools.openDrawer()
+    goToFind(e.shiftKey ? -1 : 1)
+    return
+  }
+  if (e.key === 'Escape' && !tools.drawerPinned.value && tools.drawerOpen.value && !inEditable) {
+    tools.closeDrawer()
+  }
+}
+
 onMounted(() => {
   autoScroll.value = settings.cfg.behavior.autoScroll !== false
   measureViewport()
@@ -868,6 +942,7 @@ onMounted(() => {
     }, 120)
   }
   window.addEventListener('resize', onWinResize)
+  window.addEventListener('keydown', onGlobalKeydown)
   unsubIndex = logs.onLogIndexUpdate((key, entry, meta) => {
     const svc = nav.currentService
     if (!svc || !entry) return
@@ -893,6 +968,7 @@ onUnmounted(() => {
   if (unsubIndex) unsubIndex()
   if (unsubSettings) unsubSettings()
   if (onWinResize) window.removeEventListener('resize', onWinResize)
+  window.removeEventListener('keydown', onGlobalKeydown)
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
   clearTimeout(resizeTimer)
   clearTimeout(rebuildTimer)
@@ -929,25 +1005,40 @@ onUnmounted(() => {
 .path-sep { color: var(--bd2); flex-shrink: 0 }
 .path-mod { color: var(--t2); font-weight: 600; overflow: hidden; text-overflow: ellipsis }
 .path-file { color: var(--t1); font-weight: 600; overflow: hidden; text-overflow: ellipsis }
-.filter-slot { flex: 1 1 260px; min-width: 240px; max-width: min(720px, 100%) }
 .tb-actions { flex-shrink: 0 }
-
-.hist-bar {
-  display: flex;
+.tb-tools {
+  display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  flex-wrap: wrap;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--bd);
-  background: color-mix(in srgb, var(--ac) 5%, var(--s1));
-  flex-shrink: 0;
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--s2);
+  color: var(--t2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
-.hist-label { flex-shrink: 0 }
-.hist-date { width: 148px; flex-shrink: 0 }
-.hist-sel { width: min(420px, 100%); min-width: 220px; flex: 1 }
-.hist-rule { opacity: .85; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.hist-cache { font-size: var(--fs-xs); color: var(--t3); opacity: .8 }
-.file-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100% }
+.tb-tools:hover { color: var(--t1); border-color: color-mix(in srgb, var(--ac) 42%, var(--bd)) }
+.tb-tools.on { color: var(--ac); border-color: var(--ac); background: var(--surf-active) }
+.tb-badge {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--ac);
+  color: var(--bg);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  text-align: center;
+}
+.tb-pin { color: var(--t3) }
+.ui-find-chip { cursor: pointer }
+.ui-find-chip:hover { filter: brightness(1.08) }
 
 .loading-panel {
   position: absolute;
@@ -1021,11 +1112,7 @@ onUnmounted(() => {
 @media (max-width: 900px) {
   .toolbar { padding: 8px 10px }
   .tb-path { flex: 1 1 100%; min-width: 0 }
-  .filter-slot { flex: 1 1 100%; max-width: none; min-width: 0 }
   .tb-actions { margin-left: auto }
-  .hist-bar { padding: 6px 10px }
-  .hist-date { width: 132px }
-  .hist-sel { min-width: 160px }
   .status-time { margin-left: 0 }
 }
 </style>
