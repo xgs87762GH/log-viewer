@@ -289,19 +289,20 @@ onBeforeUnmount(() => {
   position: relative; display: flex; align-items: center; gap: var(--sp-3);
   width: 100%; padding: var(--sp-3);
   border: 1px solid transparent; border-radius: var(--r);
-  background: transparent; color: var(--t2); font-family: inherit;
+  background-color: color-mix(in srgb, var(--ac) 0%, transparent);
+  color: var(--t2); font-family: inherit;
   text-align: left; cursor: pointer;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
-              border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  /* 镂空图标底下的底色过渡会造成明暗插值闪烁，这里离散切换 */
+  transition: none;
 }
 .nav-item::before {
   content: ''; position: absolute; left: 0; top: 22%; height: 56%;
   width: 3px; border-radius: 0 3px 3px 0; background: var(--grad-accent);
   transform: scaleY(0); transition: transform var(--dur) var(--ease);
 }
-.nav-item:hover { background: var(--surf-hover); color: var(--t1); transform: translateX(2px) }
+.nav-item:hover { background-color: var(--surf-hover) }
 .nav-item.on {
-  color: var(--ac); background: var(--surf-active);
+  color: var(--ac); background-color: var(--surf-active);
   border-color: color-mix(in srgb, var(--ac) 24%, transparent);
 }
 .nav-item.on::before { transform: scaleY(1) }

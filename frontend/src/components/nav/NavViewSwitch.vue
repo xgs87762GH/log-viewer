@@ -72,7 +72,7 @@ const nav = useNavigation()
   gap: 12px;
   width: 100%;
   border: 1px solid transparent;
-  background: transparent;
+  background-color: color-mix(in srgb, var(--ac) 0%, transparent);
   color: var(--t2);
   font-size: 13px;
   font-weight: 600;
@@ -80,8 +80,9 @@ const nav = useNavigation()
   border-radius: var(--r);
   cursor: pointer;
   font-family: inherit;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
-              transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  /* 图标是镂空 SVG：底色/颜色一旦过渡，镂空处明暗渐变就会让图标「忽闪忽灭」。
+     这里全部离散切换、不做任何过渡，图标区域像素始终稳定。 */
+  transition: none;
 }
 .item::before {
   content: '';
@@ -102,12 +103,10 @@ const nav = useNavigation()
   padding: 0;
   justify-content: center;
 }
-.item:hover { background: var(--surf-hover); color: var(--t1); transform: translateX(2px) }
+.item:hover { background-color: var(--surf-hover) }
 .item.on {
   color: var(--ac);
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--ac) 16%, transparent),
-    color-mix(in srgb, var(--ac) 4%, transparent));
+  background-color: color-mix(in srgb, var(--ac) 14%, transparent);
   border-color: color-mix(in srgb, var(--ac) 26%, transparent);
   box-shadow: var(--sh-1);
 }

@@ -100,6 +100,8 @@ App 外壳
 - 行操作项 hover 才出现，绝不撑开行高；工具条不做级别二次过滤（文件已按级别区分）。
 - 加载以「最新请求胜出」（序号令牌）为准；滚到末尾只在加载完成且 DOM 绘制后执行。
 - 全局快捷键在 `keep-alive` 下仍会触发，处理前必须判断当前处于 `viewer` 视图。
+- `keep-alive` 隐藏时容器宽高为 0：任何测量前必须判可见，尺寸变化用 `ResizeObserver` 兜住侧栏折叠 / 抽屉开合 / 窗口缩放；`onActivated` 必须重测并把逻辑滚动位置夹紧后写回 DOM，否则虚拟列表窗口错位出现空白。
+- 行高只由 `visualLines × baseRowH` 决定；`wrapCols` 的单字符宽度用与 `.ln .tx` 同字体的 DOM 探针实测，不用 `fontSize × 0.62` 经验值（会系统性多算一整行）。
 - 高亮 HTML 缓存键要包含过滤词、高亮词与查找词；`viewRows` 用 `shallowRef` 避免深度代理。
 - 设置分区按 `SETTINGS_SECTIONS` 的 `component` 字段动态挂载（`<component :is>` + 按 `props` 声明装配入参）；新增分区只需加常量项与一个 `Settings*.vue`，不改模板、图标映射与测试。
 

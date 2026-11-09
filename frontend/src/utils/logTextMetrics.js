@@ -1,6 +1,6 @@
 /**
  * 日志文本度量 —— 显示列宽 / 换行列数 / 视觉行数 / 基准行高
- * 纯计算；不感知折叠、虚拟列表、Vue。
+ * 计算与折叠、虚拟列表、Vue 解耦；字体相关读取集中在下方两个 DOM 入口。
  */
 
 /** 东亚宽字符 / 全角按 2 列（简化 EastAsianWidth） */
@@ -40,6 +40,7 @@ export function displayWidth(text) {
 /**
  * 按容器宽度估算等宽字体每行「列」数。
  * 宁可少估列数（行高略高），不可多估导致 overflow 裁字。
+ * pxPerChar 传入时用实测字符宽，否则回退 fontSize*0.62 的经验值。
  */
 export function estimateWrapCols(clientWidth, {
   gutter = 72,
@@ -70,13 +71,39 @@ export function baseRowHeight({ fontSize = 13, lineHeight = 1.65, wordWrap = tru
   return Math.max(18, Math.round(fs * 1.7))
 }
 
-/** 从 CSS 变量读取日志字体度量（唯一读 DOM 的入口） */
+/** 从 CSS 变量读取日志字体度量 */
 export function readLogFontMetrics(rootEl = typeof document !== 'undefined' ? document.documentElement : null) {
   if (!rootEl || typeof getComputedStyle !== 'function') {
-    return { fontSize: 13, lineHeight: 1.65 }
+    return { fontSize: 13, lineHeight: 1.65, fontFamily: '' }
   }
   const root = getComputedStyle(rootEl)
   const fontSize = parseFloat(root.getPropertyValue('--fs-log')) || 13
   const lineHeight = parseFloat(root.getPropertyValue('--lh-log').trim()) || 1.65
-  return { fontSize, lineHeight }
+  const fontFamily = root.getPropertyValue('--font-log').trim()
+  return { fontSize, lineHeight, fontFamily }
+}
+
+/**
+ * 用与 .ln .tx 一致的字体实测单字符宽度，替代 fontSize*0.62 经验值。
+ * 经验值对 Consolas 等窄等宽字体会少估约 15% 列数，进而多算一整行行高。
+ * 无 DOM / 测量异常时返回 null，由调用方回退经验值。
+ */
+export function measureLogCharWidth(fontSize, fontFamily) {
+  if (typeof document === 'undefined' || !document.body || !fontFamily) return null
+  const probe = document.createElement('span')
+  const sample = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_./:- '
+  const repeat = 4
+  probe.textContent = sample.repeat(repeat)
+  probe.style.cssText =
+    'position:absolute;left:-99999px;top:0;visibility:hidden;white-space:pre;pointer-events:none'
+  probe.style.fontSize = `${Number(fontSize) || 13}px`
+  probe.style.fontFamily = fontFamily
+  document.body.appendChild(probe)
+  try {
+    const width = probe.getBoundingClientRect().width || probe.offsetWidth
+    const ppc = width / (sample.length * repeat)
+    return ppc >= 4 && ppc <= 40 ? ppc : null
+  } finally {
+    probe.remove()
+  }
 }

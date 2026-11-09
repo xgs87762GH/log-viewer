@@ -183,7 +183,7 @@
  * 折叠语义：单条日志视觉行数超阈值则文章式折叠（限高裁切，不改正文）。
  * 渲染：可变行高虚拟列表（换行开/关统一路径），仅窗口内高亮。
  */
-import { ref, shallowRef, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue'
 import { useLogs } from '../../composables/useLogs'
 import { useSettings } from '../../composables/useSettings'
 import { useNavigation } from '../../composables/useNavigation'
@@ -194,9 +194,10 @@ import { FALLBACK_LEVEL_ORDER } from '../../constants/logLevels'
 import { FIND_HIGHLIGHT_CLASS, USER_HIGHLIGHT_CLASS } from '../../constants/logSearchTools'
 import { highlightLine, applyTextHighlights } from '../../utils/logParser'
 import { buildFindMatches, findScrollTop } from '../../utils/logFind'
-import { estimateWrapCols, baseRowHeight, readLogFontMetrics } from '../../utils/logTextMetrics'
-import { buildRowLayout, findStartIndex, findEndIndex } from '../../utils/logVirtualLayout'
+import { estimateWrapCols, baseRowHeight, readLogFontMetrics, measureLogCharWidth } from '../../utils/logTextMetrics'
+import { buildRowLayout, findStartIndex, findEndIndex, clampScrollTop } from '../../utils/logVirtualLayout'
 import { processLogAsync, processLogSync } from '../../utils/logProcessClient'
+import { filterLogFilesByDate, defaultLogFile } from '../../utils/logFileFilter'
 import { Loading, Refresh, DocumentCopy, Document, Clock, Search, Lock } from '@element-plus/icons-vue'
 import LogToolsDrawer from './LogToolsDrawer.vue'
 import LogFoldBar from './LogFoldBar.vue'
@@ -283,13 +284,14 @@ let processSeq = 0
 let loadAbort = null
 let scrollRaf = 0
 let resizeTimer = 0
+let resizeObserver = null
+let pendingScrollToEnd = false
+let lastBox = { w: 0, h: 0 }
 const hlCache = new Map()
 
-const filteredLogFiles = computed(() => {
-  const d = dateFilter.value
-  if (!d) return logFiles.value
-  return logFiles.value.filter((f) => f.active || f.date === d)
-})
+const filteredLogFiles = computed(() =>
+  filterLogFilesByDate(logFiles.value, dateFilter.value),
+)
 
 const foldEnabled = computed(() => settings.cfg.behavior.foldOverLimit === true)
 const foldMaxLines = computed(() => {
@@ -346,17 +348,66 @@ function refreshIndexHint() {
     : `上次刷新 ${when}（打开将检测）`
 }
 
+/** keep-alive 缓存时 DOM 脱离文档，宽高为 0；此时测量会污染 wrapCols / viewportH */
+function logWrapVisible() {
+  const el = logWrapRef.value
+  return !!el && el.isConnected !== false && el.clientWidth > 0 && el.clientHeight > 0
+}
+
 function refreshWrapCols() {
   const el = logWrapRef.value
-  if (!el) return
-  const { fontSize, lineHeight } = readLogFontMetrics()
-  wrapCols.value = estimateWrapCols(el.clientWidth, { fontSize })
+  if (!el || el.clientWidth <= 0) return
+  const { fontSize, lineHeight, fontFamily } = readLogFontMetrics()
+  const pxPerChar = measureLogCharWidth(fontSize, fontFamily)
+  wrapCols.value = estimateWrapCols(el.clientWidth, { fontSize, pxPerChar })
   baseRowH.value = baseRowHeight({
     fontSize,
     lineHeight,
     wordWrap: wordWrap.value,
   })
   document.documentElement.style.setProperty('--row-h', baseRowH.value + 'px')
+}
+
+/** 侧栏折叠、抽屉开合、窗口缩放都会改变容器尺寸，统一由此重测 */
+function onLayoutResize() {
+  if (!logWrapVisible()) return
+  const el = logWrapRef.value
+  if (el.clientWidth === lastBox.w && el.clientHeight === lastBox.h) return
+  lastBox = { w: el.clientWidth, h: el.clientHeight }
+  measureViewport()
+  nextTick(() => {
+    if (!logWrapVisible()) return
+    scrollTop.value = el.scrollTop
+  })
+}
+
+function observeLogWrap() {
+  const el = logWrapRef.value
+  if (resizeObserver || !el || typeof ResizeObserver === 'undefined') return
+  resizeObserver = new ResizeObserver(onLayoutResize)
+  resizeObserver.observe(el)
+}
+
+function stopObservingLogWrap() {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+}
+
+/** 字体 / 换行变化会改行高，按比例恢复阅读位置；隐藏时留给激活后重测 */
+function restoreScrollRatio(ratio) {
+  nextTick(() => {
+    const el = logWrapRef.value
+    if (!logWrapVisible()) return
+    el.scrollTop = ratio * el.scrollHeight
+    scrollTop.value = el.scrollTop
+  })
+}
+
+function remeasureAndRestoreScroll() {
+  if (!logWrapVisible()) return
+  const ratio = totalHeight.value > 0 ? scrollTop.value / totalHeight.value : 0
+  measureViewport()
+  restoreScrollRatio(ratio)
 }
 
 function paintRow(row, ctx, pxH) {
@@ -486,7 +537,7 @@ function onScroll() {
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = 0
     const el = logWrapRef.value
-    if (!el) return
+    if (!el || el.clientWidth <= 0) return
     scrollTop.value = el.scrollTop
     viewportH.value = el.clientHeight
   })
@@ -616,7 +667,7 @@ function applyFileList(files, keepSelection) {
     return
   }
   if (keepSelection && prev && !files.length) return
-  selectedFile.value = files[0]?.name || prev || ''
+  selectedFile.value = defaultLogFile(files, dateFilter.value) || prev || ''
   if (selectedFile.value) nav.setRouteFile(selectedFile.value)
 }
 
@@ -634,8 +685,8 @@ async function refreshFileList() {
 }
 
 function onFileChange(name) {
-  if (!name && logFiles.value[0]) {
-    selectedFile.value = logFiles.value[0].name
+  if (!name) {
+    selectedFile.value = defaultLogFile(logFiles.value, dateFilter.value)
   }
   nav.setRouteFile(selectedFile.value)
   loadLog({ skipList: true, force: true })
@@ -769,17 +820,27 @@ async function loadLog({ skipList = false, force = false } = {}) {
 }
 
 function measureViewport() {
+  if (!logWrapVisible()) return
   const el = logWrapRef.value
-  if (el) viewportH.value = el.clientHeight
+  lastBox = { w: el.clientWidth, h: el.clientHeight }
+  viewportH.value = el.clientHeight
   refreshWrapCols()
 }
 
 function scrollToEnd() {
   if (!autoScroll.value) return
+  if (!logWrapVisible()) {
+    pendingScrollToEnd = true
+    return
+  }
+  pendingScrollToEnd = false
   nextTick(() => {
     requestAnimationFrame(() => {
       const el = logWrapRef.value
-      if (!el) return
+      if (!logWrapVisible()) {
+        pendingScrollToEnd = true
+        return
+      }
       el.scrollTop = el.scrollHeight
       scrollTop.value = el.scrollTop
     })
@@ -795,16 +856,7 @@ function toggleAutoScroll() {
 function toggleWordWrap() {
   const next = !wordWrap.value
   settings.setBehavior('wordWrap', next)
-  nextTick(() => {
-    const ratio = totalHeight.value > 0 ? scrollTop.value / totalHeight.value : 0
-    refreshWrapCols()
-    nextTick(() => {
-      const el = logWrapRef.value
-      if (!el) return
-      el.scrollTop = ratio * el.scrollHeight
-      scrollTop.value = el.scrollTop
-    })
-  })
+  nextTick(remeasureAndRestoreScroll)
 }
 
 function onCopyCommand(cmd) {
@@ -864,27 +916,20 @@ watch(
 )
 
 watch(
-  () => [settings.cfg.sizes.log, settings.cfg.sizes.lh],
-  () => {
-    const ratio = totalHeight.value > 0 ? scrollTop.value / totalHeight.value : 0
-    refreshWrapCols()
-    nextTick(() => {
-      const el = logWrapRef.value
-      if (!el) return
-      el.scrollTop = ratio * el.scrollHeight
-      scrollTop.value = el.scrollTop
-    })
-  },
+  () => [settings.cfg.sizes.log, settings.cfg.sizes.lh, settings.cfg.fonts.log],
+  () => nextTick(remeasureAndRestoreScroll),
 )
 
-watch(dateFilter, () => {
+watch(dateFilter, (d) => {
   const list = filteredLogFiles.value
   if (!list.length) return
-  if (!list.some((f) => f.name === selectedFile.value)) {
-    selectedFile.value = list[0].name
-    nav.setRouteFile(selectedFile.value)
-    loadLog({ skipList: true, force: true })
-  }
+  // 选定日期：切到该日期最新归档（列表首项）；清空日期：保留仍在列表中的选择
+  const target = d ? list[0].name : ''
+  if (!d && list.some((f) => f.name === selectedFile.value)) return
+  if (selectedFile.value === target) return
+  selectedFile.value = target || list[0].name
+  nav.setRouteFile(selectedFile.value)
+  loadLog({ skipList: true, force: true })
 })
 
 watch(
@@ -928,18 +973,10 @@ function onGlobalKeydown(e) {
 onMounted(() => {
   autoScroll.value = settings.cfg.behavior.autoScroll !== false
   measureViewport()
+  observeLogWrap()
   onWinResize = () => {
     clearTimeout(resizeTimer)
-    resizeTimer = setTimeout(() => {
-      const ratio = totalHeight.value > 0 ? scrollTop.value / totalHeight.value : 0
-      refreshWrapCols()
-      nextTick(() => {
-        const el = logWrapRef.value
-        if (!el) return
-        el.scrollTop = ratio * el.scrollHeight
-        scrollTop.value = el.scrollTop
-      })
-    }, 120)
+    resizeTimer = setTimeout(remeasureAndRestoreScroll, 120)
   }
   window.addEventListener('resize', onWinResize)
   window.addEventListener('keydown', onGlobalKeydown)
@@ -962,9 +999,30 @@ onMounted(() => {
   if (nav.currentService) loadLog()
 })
 
+/** keep-alive 切回：DOM 重新挂回文档后重测宽高，并把逻辑滚动位置写回 DOM */
+onActivated(() => {
+  nextTick(() => {
+    observeLogWrap()
+    if (!logWrapVisible()) return
+    measureViewport()
+    const el = logWrapRef.value
+    el.scrollTop = clampScrollTop(scrollTop.value, el.scrollHeight, el.clientHeight)
+    scrollTop.value = el.scrollTop
+    if (pendingScrollToEnd) {
+      pendingScrollToEnd = false
+      scrollToEnd()
+    }
+  })
+})
+
+onDeactivated(() => {
+  stopObservingLogWrap()
+})
+
 onUnmounted(() => {
   loadAbort?.abort()
   loadAbort = null
+  stopObservingLogWrap()
   if (unsubIndex) unsubIndex()
   if (unsubSettings) unsubSettings()
   if (onWinResize) window.removeEventListener('resize', onWinResize)

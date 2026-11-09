@@ -20,6 +20,13 @@ export function buildRowLayout(rows, baseRowH) {
   return { heights, offsets, totalHeight: offsets[n] }
 }
 
+/** 把逻辑滚动位置夹到当前内容可滚动区间（keep-alive 恢复时用） */
+export function clampScrollTop(scrollTop, scrollHeight, clientHeight) {
+  const max = Math.max(0, (Number(scrollHeight) || 0) - (Number(clientHeight) || 0))
+  const y = Number(scrollTop) || 0
+  return Math.min(Math.max(0, y), max)
+}
+
 /** 在 offsets 中找最后一个 offsets[i] <= y 的 i */
 export function findStartIndex(offsets, y) {
   const n = offsets.length - 1

@@ -44,6 +44,7 @@
       />
     </el-tooltip>
     <span class="ui-chip">{{ filteredLogFiles.length }}/{{ logFiles.length }} 个文件</span>
+    <span v-if="dateFilter && !filteredLogFiles.length" class="hist-cache">该日期无归档</span>
     <span v-if="indexHint" class="hist-cache" :title="indexHint">{{ indexHint }}</span>
     <span v-if="ruleHint" class="ui-chip hist-rule" :title="ruleHint">{{ ruleHint }}</span>
   </div>
