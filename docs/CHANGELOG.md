@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| 当前版本 | `1.0.3` |
+| 当前版本 | `1.0.4` |
 | 版本源 | `VERSION`（主源）、前端包与锁文件、`frontend/src/constants/version.js`、`frontend/index.html`、`server.py` / `manage.py` 兜底值 |
 | 历史发布说明 | [`RELEASE_NOTES_v1.0.1.md`](../RELEASE_NOTES_v1.0.1.md) |
-| 本版变更 | 见下文「v1.0.3」；提交顺序以 `git log` 为准 |
+| 本版变更 | 见下文「v1.0.4」；提交顺序以 `git log` 为准 |
 | 发布分支 | `main`（推送至 `origin/main`） |
 
 ## 已发布基线（v1.0.1）
@@ -59,6 +59,16 @@
 - 修复侧边导航栏「设置」图标忽闪忽灭：齿轮是镂空 SVG，按钮底色的 200ms 过渡会让镂空处明暗渐变、快速切换时反复触发；`NavViewSwitch` 与设置页分区导航改为底色/颜色离散切换（`transition: none`），hover 不再改图标颜色与位移。CDP 逐帧像素采样：图标区域由 8 个中间帧收敛为 2 个离散状态，静止 / hover / 快速切换 / reduced-motion 均无闪烁，运行中动画 0。
 - 本次改动验证：前端构建通过、`node --test` **102/102** 通过（`logFileFilter` 5 例、`logTextMetrics` 5 例、`logVirtualLayout` 3 例）、lint 0；后端与浏览器冒烟未重跑。
 - 验证：构建、**89/89** 单测、4 个 Python 文件 `py_compile`、lint 0、59 个文档相对链接、无头浏览器核对（导入即生效端到端、双主题、仪表盘长服务名下 IP 完整可见）均通过。
+
+## v1.0.4
+
+发布 `cead0ff` 累积的修复并升级版本，用于验证「版本更新检查」链路（线上 tag 高于本地版本时侧栏显示「有更新」）。
+
+- 侧边导航栏「设置」图标闪烁修复：镂空 SVG 齿轮下的按钮底色 200ms 过渡导致明暗插值，改为离散切换（`transition: none`），hover 不再改图标颜色与位移；CDP 逐帧像素采样确认图标区域由 8 个中间帧收敛为 2 个离散状态。
+- 历史文件按日期筛选只列该日期归档（不混入「当前」活跃日志）、默认打开该日期最新滚动序号；抽为纯函数 `utils/logFileFilter.js`。
+- 日志虚拟列表：`ResizeObserver` 重测容器、同字体 DOM 探针实测字符宽取代经验值、隐藏时跳过测量、激活时重测并夹紧恢复滚动位置；修复行高大段空白与侧栏切换后日志区空白。
+- 新增 `logFileFilter` / `logTextMetrics` / `logVirtualLayout` 三组共 13 例单测；文档同步。
+- 验证：构建、**102/102** 单测、4 个 Python 文件 `py_compile`、lint 0、`diff --check` 通过。
 
 ## 已知限制
 

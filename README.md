@@ -2,7 +2,7 @@
 
 内网日志浏览工具：本地 Python 代理通过 HTTP Range 拉取 LogIndex（或兼容服务）的日志尾部，Vue 3 前端提供仪表盘、日志聚合、访问统计与设置。**日志正文只存在于浏览器内存，不落盘。**
 
-- 当前版本 `1.0.3`（[`VERSION`](VERSION)）
+- 当前版本 `1.0.4`（[`VERSION`](VERSION)）
 - 仓库：<https://github.com/xgs87762GH/log-viewer>
 
 ## 功能速览
