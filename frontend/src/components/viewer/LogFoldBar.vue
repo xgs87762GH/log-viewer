@@ -3,13 +3,14 @@
     type="button"
     class="fold-bar"
     :aria-expanded="expanded ? 'true' : 'false'"
-    :aria-label="expanded ? '收起本条日志' : `展开剩余 ${remain} 行`"
+    :aria-label="expanded ? '收起本条日志' : (manual ? '展开本条日志' : `展开剩余 ${remain} 行`)"
     @click="$emit('toggle')"
+    @dblclick.stop
   >
     <span class="fold-bar-line" aria-hidden="true" />
     <span class="fold-bar-label">
       <span class="fold-bar-chevron" aria-hidden="true">{{ expanded ? '▴' : '▾' }}</span>
-      {{ expanded ? '收起' : `展开剩余 ${remain} 行` }}
+      {{ expanded ? '收起' : (manual ? '展开本条日志' : `展开剩余 ${remain} 行`) }}
     </span>
     <span class="fold-bar-line" aria-hidden="true" />
   </button>
@@ -19,6 +20,7 @@
 defineProps({
   expanded: { type: Boolean, default: false },
   remain: { type: Number, default: 0 },
+  manual: { type: Boolean, default: false },
 })
 defineEmits(['toggle'])
 </script>

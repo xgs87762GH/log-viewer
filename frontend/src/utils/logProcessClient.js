@@ -66,6 +66,7 @@ export function processLogSync({
   includeTerms = [],
   excludeTerms = [],
   expandedIds,
+  collapsedIds,
   foldEnabled,
   foldMaxLines,
   wordWrap,
@@ -82,6 +83,7 @@ export function processLogSync({
     entries: filtered,
     lines,
     expandedIds,
+    collapsedIds,
     foldEnabled,
     foldMaxLines,
     wordWrap,
@@ -126,6 +128,9 @@ export function processLogAsync(args) {
       expandedIds: args.expandedIds instanceof Set
         ? [...args.expandedIds]
         : [...(args.expandedIds || [])],
+      collapsedIds: args.collapsedIds instanceof Set
+        ? [...args.collapsedIds]
+        : [...(args.collapsedIds || [])],
       foldEnabled: args.foldEnabled,
       foldMaxLines: args.foldMaxLines,
       wordWrap: args.wordWrap,

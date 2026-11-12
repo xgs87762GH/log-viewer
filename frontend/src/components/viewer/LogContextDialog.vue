@@ -1,22 +1,29 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="dialogTitle"
-    width="min(1100px, 92vw)"
-    top="6vh"
+    class="ctx-dialog"
+    modal-class="ctx-modal"
+    width="min(1280px, 94vw)"
+    top="3vh"
     destroy-on-close
     @update:model-value="emit('update:modelValue', $event)"
     @opened="scrollFocusIntoView"
   >
+    <template #header>
+      <div class="ctx-hd">
+        <span class="ctx-hd-title">{{ dialogMain }}</span>
+        <span class="ctx-hd-sub">{{ dialogSub }}</span>
+      </div>
+    </template>
+
     <div class="ctx-toolbar">
-      <span class="ui-chip ui-chip--accent">前后 {{ win.before }} / {{ win.after }} 行</span>
-      <el-button size="small" :disabled="upBlocked" @click="loadMore('up')">向前加载</el-button>
-      <el-button size="small" :disabled="downBlocked" @click="loadMore('down')">向后加载</el-button>
-      <el-button size="small" @click="copyContext">复制上下文</el-button>
-      <el-button size="small" @click="copyFocus">复制当前行</el-button>
-      <span class="ctx-hint">
-        初始 {{ cfg.initialLines }} · 每次 {{ cfg.lazyStep }} · 单侧上限 {{ cfg.maxLinesPerSide }}（可在设置中调整）
-      </span>
+      <div class="ctx-actions">
+        <el-button size="small" :disabled="upBlocked" @click="loadMore('up')">向前加载</el-button>
+        <el-button size="small" :disabled="downBlocked" @click="loadMore('down')">向后加载</el-button>
+        <el-button size="small" @click="copyContext">复制上下文</el-button>
+        <el-button size="small" @click="copyFocus">复制当前行</el-button>
+      </div>
+      <span class="ctx-hint" :title="hintFull">前后 {{ win.before }} / {{ win.after }} 行</span>
     </div>
 
     <div ref="bodyRef" class="ctx-body" @scroll="onScroll">
@@ -65,10 +72,17 @@ const cfg = ref(clampContextConfig(props.config))
 const win = ref(createWindow(0, 0, cfg.value))
 let raf = 0
 
-const dialogTitle = computed(() => {
-  const parts = [props.meta.file, props.meta.level].filter(Boolean)
-  return `${parts.join(' · ') || '日志上下文'} · 第 ${props.centerIdx + 1} 行`
+/** 标题拆两段：文件名为主，级别与行号作副标题，避免长串换行 */
+const dialogMain = computed(() => props.meta.file || '日志上下文')
+const dialogSub = computed(() => {
+  const level = props.meta.level ? `${props.meta.level} · ` : ''
+  return `${level}第 ${props.centerIdx + 1} 行`
 })
+/** 完整窗口参数放进 tooltip，操作条只显示当前前后行数 */
+const hintFull = computed(
+  () =>
+    `初始 ${cfg.value.initialLines} 行 · 每次 ${cfg.value.lazyStep} 行 · 单侧上限 ${cfg.value.maxLinesPerSide} 行（可在设置中调整）`,
+)
 
 const rows = computed(() => {
   const out = []

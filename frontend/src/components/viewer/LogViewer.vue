@@ -39,9 +39,6 @@
           <el-tooltip :content="wordWrap ? '关闭自动换行' : '开启自动换行'" placement="top" :show-after="400">
             <el-button size="small" :type="wordWrap ? 'primary' : 'default'" @click="toggleWordWrap">换行</el-button>
           </el-tooltip>
-          <el-tooltip :content="autoScroll ? '关闭自动滚到末尾' : '开启自动滚到末尾'" placement="top" :show-after="400">
-            <el-button size="small" :type="autoScroll ? 'primary' : 'default'" @click="toggleAutoScroll">末尾</el-button>
-          </el-tooltip>
           <span class="ui-divider-v" />
           <el-tooltip content="重新加载当前日志" placement="top" :show-after="400">
             <el-button
@@ -64,8 +61,9 @@
         </div>
       </div>
 
+      <div class="log-region">
       <LogToolsDrawer
-        v-show="tools.drawerOpen.value"
+        :open="tools.drawerOpen.value"
         ref="drawerRef"
         v-model:date-filter="dateFilter"
         v-model:selected-file="selectedFile"
@@ -128,28 +126,41 @@
               :key="row.key"
               :class="rowClass(row)"
               :style="{ height: row.pxH + 'px' }"
-              @click="onRowClick(row, $event)"
+              :title="row.kind === 'fold' ? undefined : '双击查看上下文'"
+              @dblclick="onRowDblClick(row, $event)"
             >
               <LogFoldBar
                 v-if="row.kind === 'fold'"
                 :expanded="!!row.expanded"
                 :remain="row.remain || 0"
-                @toggle="row.expanded ? collapseEntry(row.entryId) : expandEntry(row.entryId)"
+                :manual="!!row.manual"
+                @toggle="onFoldToggle(row)"
               />
               <template v-else>
                 <span class="no">{{ row.no }}</span>
                 <span class="tx" v-html="row.html"></span>
+                <button
+                  v-if="row.canFold"
+                  class="ln-ctx-btn ln-fold-btn"
+                  type="button"
+                  title="折叠本条日志"
+                  aria-label="折叠本条日志"
+                  @click.stop="foldEntry(row.entryId)"
+                  @dblclick.stop
+                >折叠</button>
                 <button
                   class="ln-ctx-btn"
                   type="button"
                   title="查看上下文"
                   aria-label="查看上下文"
                   @click.stop="openContext(row)"
+                  @dblclick.stop
                 >⋯</button>
               </template>
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       <div class="status">
@@ -163,6 +174,13 @@
         <span class="ui-chip"><b>{{ fmtSize(downloadedBytes) }}</b> / {{ appliedTailMB }}MB</span>
         <span class="ui-chip">文件 {{ fmtSize(size) }}</span>
         <span class="status-time"><el-icon><Clock /></el-icon> {{ updateTime }}</span>
+        <LogScrollNav
+          v-if="!loading && !error && lines.length"
+          :at-top="atTop"
+          :at-bottom="atBottom"
+          @top="scrollToTop"
+          @bottom="scrollToBottom"
+        />
       </div>
 
       <LogContextDialog
@@ -198,10 +216,12 @@ import { estimateWrapCols, baseRowHeight, readLogFontMetrics, measureLogCharWidt
 import { buildRowLayout, findStartIndex, findEndIndex, clampScrollTop } from '../../utils/logVirtualLayout'
 import { processLogAsync, processLogSync } from '../../utils/logProcessClient'
 import { filterLogFilesByDate, defaultLogFile } from '../../utils/logFileFilter'
+import { isAtTop, isAtBottom } from '../../utils/logScrollState'
 import { Loading, Refresh, DocumentCopy, Document, Clock, Search, Lock } from '@element-plus/icons-vue'
 import LogToolsDrawer from './LogToolsDrawer.vue'
 import LogFoldBar from './LogFoldBar.vue'
 import LogContextDialog from './LogContextDialog.vue'
+import LogScrollNav from './LogScrollNav.vue'
 
 const logs = useLogs()
 const settings = useSettings()
@@ -274,6 +294,8 @@ const ruleHint = ref('')
 const indexHint = ref('索引未建立')
 
 const expandedIds = ref(new Set())
+/** 用户手动折叠的条目；与自动超行折叠（expandedIds）互不干扰 */
+const collapsedIds = ref(new Set())
 
 /** 上下文锚点是原始行下标，与过滤后的 viewRows 完全解耦 */
 const context = ref({ open: false, centerIdx: 0, meta: {} })
@@ -286,6 +308,8 @@ let scrollRaf = 0
 let resizeTimer = 0
 let resizeObserver = null
 let pendingScrollToEnd = false
+/** 进入日志（加载/切换）时的置底请求不受「自动滚动到末尾」设置限制 */
+let pendingScrollForce = false
 let lastBox = { w: 0, h: 0 }
 const hlCache = new Map()
 
@@ -479,6 +503,7 @@ function scrollToMatch(match) {
   scrollTop.value = y
 }
 
+/** 自动折叠条：展开 / 收起 */
 function expandEntry(id) {
   const next = new Set(expandedIds.value)
   next.add(id)
@@ -489,6 +514,25 @@ function collapseEntry(id) {
   const next = new Set(expandedIds.value)
   next.delete(id)
   expandedIds.value = next
+}
+
+/** 行内「折叠」：折叠任意一条日志，再次点折叠条即可展开 */
+function foldEntry(id) {
+  const next = new Set(collapsedIds.value)
+  next.add(id)
+  collapsedIds.value = next
+}
+
+function unfoldEntry(id) {
+  const next = new Set(collapsedIds.value)
+  next.delete(id)
+  collapsedIds.value = next
+}
+
+function onFoldToggle(row) {
+  if (row.expanded) collapseEntry(row.entryId)
+  else if (row.manual) unfoldEntry(row.entryId)
+  else expandEntry(row.entryId)
 }
 
 function clearFilters() {
@@ -509,12 +553,15 @@ function openContext(row) {
   }
 }
 
-function onRowClick(row, ev) {
+/**
+ * 只有双击日志行才打开上下文；单击不做任何事。
+ * 注意：浏览器双击会默认选中词，所以这里不能沿用「有选区就不弹窗」的判断。
+ */
+function onRowDblClick(row, ev) {
   if (row.kind === 'fold') return
-  // 选中文本时保留复制能力，不弹窗；操作按钮自身用 .stop 直接打开
-  const sel = typeof window !== 'undefined' ? window.getSelection?.() : null
-  if (sel && String(sel).length > 0) return
   if (ev?.target?.closest?.('button, a')) return
+  const sel = typeof window !== 'undefined' ? window.getSelection?.() : null
+  sel?.removeAllRanges?.()
   openContext(row)
 }
 
@@ -555,6 +602,7 @@ function resetViewData() {
   lineCapped.value = false
   scrollTop.value = 0
   expandedIds.value = new Set()
+  collapsedIds.value = new Set()
   hlCache.clear()
 }
 
@@ -568,6 +616,7 @@ async function rebuildViewRows() {
     includeTerms: includeTerms.value,
     excludeTerms: excludeTerms.value,
     expandedIds: expandedIds.value,
+    collapsedIds: collapsedIds.value,
     foldEnabled: foldEnabled.value,
     foldMaxLines: foldMaxLines.value,
     wordWrap: wordWrap.value,
@@ -594,7 +643,7 @@ function scheduleRebuild() {
 }
 
 watch(
-  [includeTerms, excludeTerms, expandedIds, foldEnabled, foldMaxLines, wordWrap, wrapCols],
+  [includeTerms, excludeTerms, expandedIds, collapsedIds, foldEnabled, foldMaxLines, wordWrap, wrapCols],
   () => {
     scheduleRebuild()
   },
@@ -816,7 +865,8 @@ async function loadLog({ skipList = false, force = false } = {}) {
   await nextTick()
   await rebuildViewRows()
   measureViewport()
-  scrollToEnd()
+  // 加载/切换日志后默认定位到最新一行
+  scrollToEnd(true)
 }
 
 function measureViewport() {
@@ -827,30 +877,48 @@ function measureViewport() {
   refreshWrapCols()
 }
 
-function scrollToEnd() {
-  if (!autoScroll.value) return
+const atTop = computed(() => isAtTop(scrollTop.value))
+const atBottom = computed(() => isAtBottom(scrollTop.value, viewportH.value, totalHeight.value))
+
+/** 置顶 / 置底：一次性平滑滚动，不受「自动滚动到末尾」设置影响 */
+function scrollToTop() {
+  const el = logWrapRef.value
+  if (!el) return
+  el.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function scrollToBottom() {
+  const el = logWrapRef.value
+  if (!el) return
+  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+}
+
+/**
+ * 滚到末尾。
+ * force=true：进入日志（刷新、点击服务/级别/文件）时无条件置底；
+ * 默认只在「自动滚动到末尾」开启时跟随后续新增。
+ */
+function scrollToEnd(force = false) {
+  if (!force && !autoScroll.value) return
   if (!logWrapVisible()) {
     pendingScrollToEnd = true
+    if (force) pendingScrollForce = true
     return
   }
   pendingScrollToEnd = false
+  pendingScrollForce = false
   nextTick(() => {
     requestAnimationFrame(() => {
       const el = logWrapRef.value
       if (!logWrapVisible()) {
         pendingScrollToEnd = true
+        if (force) pendingScrollForce = true
         return
       }
       el.scrollTop = el.scrollHeight
       scrollTop.value = el.scrollTop
     })
   })
-}
-
-function toggleAutoScroll() {
-  autoScroll.value = !autoScroll.value
-  settings.setBehavior('autoScroll', autoScroll.value)
-  if (autoScroll.value) scrollToEnd()
 }
 
 function toggleWordWrap() {
@@ -1009,8 +1077,10 @@ onActivated(() => {
     el.scrollTop = clampScrollTop(scrollTop.value, el.scrollHeight, el.clientHeight)
     scrollTop.value = el.scrollTop
     if (pendingScrollToEnd) {
+      const force = pendingScrollForce
       pendingScrollToEnd = false
-      scrollToEnd()
+      pendingScrollForce = false
+      scrollToEnd(force)
     }
   })
 })
@@ -1036,6 +1106,15 @@ onUnmounted(() => {
 <style scoped>
 .viewer { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden }
 .viewer-empty { flex: 1; justify-content: center }
+/* 日志区定位容器：右侧抽屉与日志滚动区共享同一层，抽屉不遮工具栏/状态条 */
+.log-region {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
 .toolbar {
   display: flex;
@@ -1145,6 +1224,15 @@ onUnmounted(() => {
   overflow: visible;
 }
 .ln-fold:hover { background: transparent !important }
+/* 折叠入口与上下文入口并排：绝对定位不撑开行高，hover 才出现 */
+.ln-fold-btn {
+  right: 30px;
+  width: auto;
+  min-width: 34px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.ln-fold-btn:hover { color: var(--ac); border-color: var(--ac) }
 
 .status {
   display: flex;
@@ -1161,7 +1249,6 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-left: auto;
   font-size: var(--fs-xs);
   color: var(--t3);
   white-space: nowrap;

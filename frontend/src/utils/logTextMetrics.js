@@ -25,13 +25,20 @@ export function charDisplayWidth(code) {
   return 1
 }
 
-/** 文本显示列宽（ASCII=1，CJK/全角≈2） */
+/** CSS 默认 tab-size；日志容器未另行设置，与 pre-wrap 下的制表位保持一致 */
+const TAB_WIDTH = 8
+
+/**
+ * 文本显示列宽（ASCII=1，CJK/全角≈2）。
+ * 制表符不是 0 宽：它把当前列推进到下一个 tab stop，
+ * 否则堆栈缩进 / 制表符分隔的日志会少算行数，被 .ln 的 overflow 裁掉。
+ */
 export function displayWidth(text) {
   const s = String(text ?? '')
   let w = 0
   for (let i = 0; i < s.length; ) {
     const cp = s.codePointAt(i)
-    w += charDisplayWidth(cp)
+    w += cp === 0x09 ? TAB_WIDTH - (w % TAB_WIDTH) : charDisplayWidth(cp)
     i += cp > 0xffff ? 2 : 1
   }
   return w
@@ -58,7 +65,10 @@ export function visualLinesOf(text, { wordWrap, wrapCols }) {
   const s = String(text ?? '')
   if (!wordWrap) return 1
   const cpl = Math.max(20, (wrapCols || 100) - 4)
-  return Math.max(1, Math.ceil(displayWidth(s) / cpl))
+  // 显式换行符在 pre-wrap 下强制换行，必须逐段累加，否则会少算整行
+  let total = 0
+  for (const part of s.split('\n')) total += Math.max(1, Math.ceil(displayWidth(part) / cpl))
+  return Math.max(1, total)
 }
 
 /** 单行基准像素高：开换行用字号×行高；关换行用字号×1.7 */

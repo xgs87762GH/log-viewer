@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  displayWidth,
   estimateWrapCols,
   visualLinesOf,
   readLogFontMetrics,
@@ -67,4 +68,21 @@ test('实测列宽消除系统性多算一行的行高', () => {
 
 test('关闭换行时视觉行数恒为 1', () => {
   assert.equal(visualLinesOf('a'.repeat(500), { wordWrap: false, wrapCols: 10 }), 1)
+})
+
+test('制表符按 tab stop 计宽，不再当作 0 宽控制字符', () => {
+  assert.equal(displayWidth('\t'), 8)
+  assert.equal(displayWidth('a\t'), 8)
+  assert.equal(displayWidth('abcdefg\t'), 8)
+  assert.equal(displayWidth('abcdefgh\t'), 16)
+  const opts = { wordWrap: true, wrapCols: 24 }
+  const tabs = Array.from({ length: 6 }, () => '\t'.repeat(8) + 'at com.Foo.bar(Foo.java:1)').join('')
+  // 含制表符的堆栈缩进不能比同长度普通文本少算行数，否则行高不够会裁字
+  assert.ok(visualLinesOf(tabs, opts) > visualLinesOf(tabs.replaceAll('\t', ''), opts))
+})
+
+test('显式换行符逐段累加视觉行数', () => {
+  const opts = { wordWrap: true, wrapCols: 100 }
+  assert.equal(visualLinesOf('a\nb\nc', opts), 3)
+  assert.ok(visualLinesOf('a'.repeat(300) + '\n' + 'b'.repeat(300), opts) >= 6)
 })

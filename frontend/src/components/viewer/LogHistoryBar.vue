@@ -1,5 +1,5 @@
 <template>
-  <div class="hist-row">
+  <div class="hist-row" :title="[dateFilter && !filteredLogFiles.length ? '该日期无归档' : '', indexHint, ruleHint].filter(Boolean).join(' · ') || undefined">
     <el-date-picker
       :model-value="dateFilter"
       type="date"

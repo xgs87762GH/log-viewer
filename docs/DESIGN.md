@@ -37,7 +37,7 @@
 | `utils/logViewRows.js` | 折叠展平与视觉行数 |
 | `utils/logVirtualLayout.js` | 高度表与二分查找 |
 | `utils/logProcessClient.js` | Worker 命令协议与同步回退 |
-| `utils/logFind.js` / `highlightTerms.js` / `toolDrawerState.js` | 查找、高亮词条、抽屉状态的纯函数 |
+| `utils/logFind.js` / `highlightTerms.js` / `toolDrawerState.js` / `logScrollState.js` | 查找、高亮词条、抽屉状态、置顶/置底判定的纯函数 |
 | `utils/filterHistory.js` / `logDownload.js` / `logContextWindow.js` | 过滤历史、流式下载、上下文窗口推进 |
 | `utils/downloadName.js` | 下载命名清洗（与后端 `_safe_download_name` 同步字符集与上限） |
 | `utils/configBundle.js` | 配置段的唯一 descriptor（`SECTION_DEFS`）与归档组装 / 校验 / 摘要 |
@@ -59,7 +59,8 @@
 - 下载 URL 只由 `useLogs.buildDownloadUrl` 构造，组件不得直连 LogIndex；保存名统一由 `utils/downloadName.js` 生成（配置的中文环境 `label` / 项目 / 级别），并同步给后端附件头。
 - 上下文弹窗数据源是原始 `lines`，锚点是 `row.idx`，**不得取过滤后的 `viewRows`**。
 - Worker 协议：`setLines` 仅在 `lines` 引用变化时发送；`query` 只带条件与展示参数；两端保持 `{ viewRows, filteredRowCount }` 同构，同步回退路径同样如此。
-- 搜索工具抽屉只持久化「是否固定」；未固定时切走视图或点击抽屉外部自动收起，固定态豁免。
+- 搜索工具抽屉是右侧浮层、四区各占一行，只持久化「是否固定」；未固定时切走视图或点击抽屉外部自动收起，固定态豁免；抽屉开关与状态栏置顶/置底按钮不算「外部」。
+- 置顶/置底按钮常驻状态栏最右（`margin-left: auto`），只做一次性平滑滚动，不读写「自动滚动到末尾」设置；禁用态由 `utils/logScrollState.js` 的 `isAtTop` / `isAtBottom` 判定（2px 容差）。
 - `useConfigTransfer` 只做编排：段的形状、作用域、存储键与预览摘要都声明在 `utils/configBundle.js` 的 `SECTION_DEFS`（**新增配置段只改这一处**），落盘在 `utils/logDownload.js`；服务端段走 `/api/config/*`（白名单），本地段走 localStorage，**凭据永不入归档**。
 - 配置分区独立于设置草稿：导入必须先预览并逐项勾选，确认后才写入；服务端写回前必须备份。
 - 本地存储键一律从 `constants/storageKeys.js` 导入（原模块可 re-export 保持调用方不变），不得在组件 / composable 里写裸字符串。
@@ -69,7 +70,7 @@
 ```text
 components/
 ├── nav/         # NavPrimary / NavSecondary / NavViewSwitch / NavEnvModuleTree
-├── viewer/      # LogViewer + 工具抽屉、过滤、高亮、查找、历史文件、折叠、上下文
+├── viewer/      # LogViewer + 右侧工具抽屉、过滤、高亮、查找、历史文件、折叠、上下文、置顶/置底
 ├── dashboard/   # Dashboard
 ├── stats/       # AccessStats
 └── settings/    # SettingsPage + Appearance / Typography / Behavior / ConfigTransfer
@@ -95,10 +96,11 @@ App 外壳
 - 组件只消费语义 token（`--r*` / `--sp*` / `--sh*` / `--grad-*` / `--surf-*` / `--dur` / `--t*`），**不得写死颜色、圆角、阴影与过渡时长**；新表面效果先加 token。
 - 静态 token、`Element Plus` 桥接与可复用原子类只在 `global.css`：`.ui-eyebrow` / `.ui-grad-text` / `.ui-surface` / `.ui-kpi*` / `.ui-chip*` / `.ui-dot*` / `.ui-icon-btn` / `.ui-empty*` / `.ui-toolbar-group` / `.ui-divider-v`。
 - 图标按钮必须同时有 `el-tooltip` 与 `aria-label`；所有交互元素保留 `focus-visible`。
+- 上下文弹窗高度自适应：弹窗 `max-height: calc(100vh - 3vh - 20px)`，标题与操作条固定，日志区 `flex: 1` 占满剩余高度；遮罩层锁定 `overflow: hidden`，禁止整窗随页面滚动。
 - 提示只用 `useToast`（按需引入 `ElMessage`），不要全量注册 Element Plus。
 - **v-html 产出的样式必须写在 `global.css`**：日志行、级别色、三层高亮（`hit` / `hl` / `find-hit`）与当前命中行都依赖它。追加高亮只接受 class 白名单，防止注入。
 - 行操作项 hover 才出现，绝不撑开行高；工具条不做级别二次过滤（文件已按级别区分）。
-- 加载以「最新请求胜出」（序号令牌）为准；滚到末尾只在加载完成且 DOM 绘制后执行。
+- 加载以「最新请求胜出」（序号令牌）为准；滚到末尾只在加载完成且 DOM 绘制后执行。刷新或切换服务 / 级别 / 文件后的首次定位强制置底；「自动滚动到末尾」只控制后续增量是否跟随，`onActivated` 切回视图仍恢复原阅读位置。
 - 全局快捷键在 `keep-alive` 下仍会触发，处理前必须判断当前处于 `viewer` 视图。
 - `keep-alive` 隐藏时容器宽高为 0：任何测量前必须判可见，尺寸变化用 `ResizeObserver` 兜住侧栏折叠 / 抽屉开合 / 窗口缩放；`onActivated` 必须重测并把逻辑滚动位置夹紧后写回 DOM，否则虚拟列表窗口错位出现空白。
 - 行高只由 `visualLines × baseRowH` 决定；`wrapCols` 的单字符宽度用与 `.ln .tx` 同字体的 DOM 探针实测，不用 `fontSize × 0.62` 经验值（会系统性多算一整行）。
