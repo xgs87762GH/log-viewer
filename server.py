@@ -39,9 +39,9 @@ DOWNLOAD_TIMEOUT_SEC = 300
 def read_version():
     try:
         with open(os.path.join(HERE, 'VERSION'), encoding='utf-8') as f:
-            return f.read().strip() or '1.0.4'
+            return f.read().strip() or '1.1.0'
     except Exception:
-        return '1.0.4'
+        return '1.1.0'
 
 
 APP_VERSION = read_version()

@@ -66,9 +66,9 @@ IS_WIN = os.name == "nt"
 def read_version() -> str:
     try:
         # utf-8-sig：容忍外部编辑器 / PowerShell 写入的 BOM
-        return (HERE / "VERSION").read_text(encoding="utf-8-sig").strip() or "1.0.4"
+        return (HERE / "VERSION").read_text(encoding="utf-8-sig").strip() or "1.1.0"
     except Exception:
-        return "1.0.4"
+        return "1.1.0"
 
 
 APP_VERSION = read_version()
