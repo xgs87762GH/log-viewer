@@ -105,16 +105,18 @@
 /**
  * AccessStats —— 访问统计页（IP 白名单门禁由后端强制）
  */
-import { reactive, ref, onMounted, onUnmounted } from 'vue'
+import { reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import {
   User, Lock, Histogram, DataAnalysis, Clock, Document, Refresh, InfoFilled,
 } from '@element-plus/icons-vue'
 import { usePresence } from '../../composables/usePresence'
 import { useAccessLog } from '../../composables/useAccessLog'
+import { useNavigation } from '../../composables/useNavigation'
 import { requestJson, ApiError } from '../../utils/apiClient'
 
 const presence = usePresence()
 const access = useAccessLog()
+const nav = useNavigation()
 
 const loading = ref(false)
 const online = ref([])
@@ -169,17 +171,35 @@ async function refresh() {
   }
 }
 
+/** 轮询只打本机 access API，不打 LogIndex；30s 一次足够 */
+function startPolling() {
+  stopPolling()
+  refresh()
+  timer = window.setInterval(refresh, 30000)
+}
+
+function stopPolling() {
+  clearInterval(timer)
+  timer = 0
+  refreshAbort?.abort()
+  refreshAbort = null
+}
+
 onMounted(() => {
   access.track(access.ACTION.OPEN_STATS)
-  refresh()
-  // 仅刷新本机 access API，不打 LogIndex；30s 一次足够
-  timer = window.setInterval(refresh, 30000)
 })
 
-onUnmounted(() => {
-  clearInterval(timer)
-  refreshAbort?.abort()
-})
+// 由导航状态驱动：keep-alive 缓存下切走视图时 hook 时机不稳定，直接看当前视图更可靠
+watch(
+  () => nav.view,
+  (view) => {
+    if (view === 'stats') startPolling()
+    else stopPolling()
+  },
+  { immediate: true },
+)
+
+onUnmounted(stopPolling)
 </script>
 
 <style scoped>

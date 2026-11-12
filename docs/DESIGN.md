@@ -106,6 +106,7 @@ App 外壳
 - 行高只由 `visualLines × baseRowH` 决定；`wrapCols` 的单字符宽度用与 `.ln .tx` 同字体的 DOM 探针实测，不用 `fontSize × 0.62` 经验值（会系统性多算一整行）。
 - 高亮 HTML 缓存键要包含过滤词、高亮词与查找词；`viewRows` 用 `shallowRef` 避免深度代理。
 - 设置分区按 `SETTINGS_SECTIONS` 的 `component` 字段动态挂载（`<component :is>` + 按 `props` 声明装配入参）；新增分区只需加常量项与一个 `Settings*.vue`，不改模板、图标映射与测试。
+- **绝对禁止对日志服务器（LogIndex）做定时轮询**：日志正文只在用户操作时请求一次，目录索引最多按天软刷新一次，`/api/proxy` 不做重试与预取。上游是内网服务，高频请求会把它打挂。仅本机 `/api/access/*` 统计接口允许定时刷新，且切走视图必须停止。
 
 ## 变更检查清单
 

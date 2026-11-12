@@ -741,6 +741,12 @@ function onFileChange(name) {
   loadLog({ skipList: true, force: true })
 }
 
+/**
+ * 加载日志正文。
+ *
+ * ⚠️ 只能由用户操作或显式刷新触发；绝对禁止用定时器轮询本方法，
+ *    否则会持续打日志服务器，可能导致上游服务不可用。
+ */
 async function loadLog({ skipList = false, force = false } = {}) {
   const svc = nav.currentService
   if (!svc) return
@@ -756,6 +762,7 @@ async function loadLog({ skipList = false, force = false } = {}) {
 
   let knownLevels = nav.getLevels(svc)
   let hasIndex = !!logs.getIndexMeta(svc.host, svc.app, nav.env)
+  let discoverFailed = false
   if (!hasIndex) {
     try {
       await logs.discoverLevels(svc.host, svc.app, {
@@ -765,11 +772,24 @@ async function loadLog({ skipList = false, force = false } = {}) {
         signal: controller.signal,
       })
     } catch (e) {
-      if (!logs.isAbortError?.(e)) console.warn('pre-discover failed:', e.message)
+      if (!logs.isAbortError?.(e)) {
+        console.warn('pre-discover failed:', e.message)
+        discoverFailed = true
+      }
     }
     if (seq !== loadSeq) return
     knownLevels = nav.getLevels(svc)
     hasIndex = !!logs.getIndexMeta(svc.host, svc.app, nav.env)
+  }
+
+  // 目录探测失败且没有本地索引：不再发起必然超时的正文请求，直接给出可诊断的原因
+  if (!hasIndex && discoverFailed) {
+    loading.value = false
+    error.value = '无法连接日志索引服务，请检查网络、baseUrl 或代理设置后重试'
+    resetViewData()
+    logFiles.value = []
+    selectedFile.value = ''
+    return
   }
 
   if (hasIndex && Array.isArray(knownLevels) && knownLevels.length === 0) {

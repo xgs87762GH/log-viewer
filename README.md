@@ -53,11 +53,21 @@ python manage.py open     # 打开浏览器
 
 访问 <http://localhost:8090>。开发热更新用 `python manage.py dev`（API :8090 + Vite :5173，已代理 `/api` 与 `/config`）；也可直接运行 `python manage.py` 或双击 `Log-Viewer.bat` 打开交互菜单。
 
+`start` / `restart` / `dev` 会先做**启动前置检查**：`config/logs.json` 缺失或 `baseUrl` 为空会直接报错并给出复制命令；随后对 `baseUrl` 做一次 4 秒**直连**探测，不可达只警告（页面仍可打开，但日志会提示无法连接）。探测同样忽略系统代理，与后端请求保持一致。
+
+打开管理脚本（无参数进入菜单或双击 `Log-Viewer.bat`）时会**自动清理 `pids.json` 里已退出的失效记录**，并在界面提示清理了哪些；不会结束任何仍然存活的进程，避免误杀其它目录同时运行的实例。
+
+菜单中的「启动 / 重启」已包含前端构建（缺 `dist` 或源码较新时自动执行），无需单独构建；需要强制重建时用 `python manage.py build`。
+
+`.runtime/server.log` 超过 **5 MB** 时，启动前会自动裁剪：保留最近 5000 行，旧内容覆盖到 `server.log.1`。裁剪只在确认要启动新进程时执行，失败只提示、不阻断启动。
+
 ## 常用命令
 
 | 命令 | 说明 |
 | --- | --- |
-| `python manage.py start` | 启动（缺 `dist` 或源码较新时自动构建） |
+| `python manage.py start` | 启动（缺 `dist` 或源码较新时自动构建）；端口被其它程序占用时会报错并给出占用进程，不再静默跳过 |
+| `python manage.py start --port 8091` | 换端口启动（默认 8090）；`stop` / `status` / `restart` 同样支持 `--port` |
+| `python manage.py start --rebuild` | 启动/重启前强制重建前端（时间戳不可信或 `dist` 损坏时用；普通启动已自动检测源码、`public`、`package-lock.json` 是否更新） |
 | `python manage.py stop` / `restart` | 停止 / 重启 |
 | `python manage.py status` / `logs` | 查看状态 / 日志 |
 | `python manage.py build` | 仅构建前端（缺 `node_modules` 时先 `npm install`） |
@@ -100,6 +110,7 @@ log-viewer/
 │   └── dist/               # 构建产物（gitignore）
 ├── manage.py / manage.bat  # 启停、构建、快捷方式
 ├── server.py               # 代理、下载、配置托管、access API
+├── procutil.py             # 进程与端口查询：占用者、归属目录、精确结束
 ├── access_store.py         # SQLite 访问记录（data/access.db）
 └── envfile.py              # .env 加载
 ```

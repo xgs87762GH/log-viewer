@@ -7,7 +7,8 @@ export const REQUEST_TIMEOUT_MS = 10_000
 export const CONFIG_TIMEOUT_MS = 10_000
 export const JSON_TIMEOUT_MS = 8_000
 export const DIR_TIMEOUT_MS = 12_000
-export const LOG_TIMEOUT_MS = 95_000
+/** 日志正文：尾部 10MB 在慢链路上仍可完成，但不再无限等待 */
+export const LOG_TIMEOUT_MS = 45_000
 
 export const LOG_CACHE_TTL_MS = 60_000
 export const LOG_CACHE_MAX_ENTRIES = 12

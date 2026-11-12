@@ -347,6 +347,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         })
 
     def handle_proxy(self, query):
+        """单次转发一次日志请求。
+
+        ⚠️ 不得在此加重试、定时预取或后台轮询：上游是内网日志服务，
+        高频请求会把它打挂；一次请求失败就直接返回错误，由前端提示用户重试。
+        """
         params = urllib.parse.parse_qs(query)
         url = params.get('url', [None])[0]
         if not url:
@@ -594,6 +599,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body.encode('utf-8'))
 
     def log_message(self, fmt, *args):
+        # 日志正文与心跳的访问日志不落到 server.log：避免刷屏，
+        # 也避免「日志里没有 proxy 记录」被误读成「没有请求过上游」。
         path = str(args[0]) if args else ''
         if any(p in path for p in ('/api/proxy', '/api/download', '/config/', '/api/access/ping')):
             return

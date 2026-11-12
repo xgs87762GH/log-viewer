@@ -44,6 +44,13 @@ import { useSettings } from './useSettings'
  * useLogs - 日志数据编排（模块级单例）
  *
  * 职责：配置、URL、拉正文、目录探测编排。
+ *
+ * ⚠️ 硬性约束：绝对禁止对日志服务器（LogIndex）做定时轮询
+ *    - 日志正文只在用户操作时请求一次（切服务 / 级别 / 文件、点刷新、双击看上下文）；
+ *    - 目录索引最多「按天软刷新」一次（shouldSoftRefresh），且仅在已有缓存时触发；
+ *    - 不得在本模块或任何组件里用 setInterval / 递归 setTimeout 拉日志——
+ *      高频请求会把上游日志服务打挂，且本服务的代理是单次转发、没有节流兜底。
+ *
  * 文件名规则 → constants/logFileRules.js
  * 索引持久化/合并/按日刷新 → utils/logFileIndex.js
  * 网络 I/O → utils/apiClient.js
