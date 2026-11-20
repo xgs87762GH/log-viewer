@@ -39,9 +39,9 @@ DOWNLOAD_TIMEOUT_SEC = 300
 def read_version():
     try:
         with open(os.path.join(HERE, 'VERSION'), encoding='utf-8') as f:
-            return f.read().strip() or '1.1.0'
+            return f.read().strip() or '1.2.0'
     except Exception:
-        return '1.1.0'
+        return '1.2.0'
 
 
 APP_VERSION = read_version()
@@ -191,6 +191,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path.startswith('/assets/'):
             self.send_header('Cache-Control', 'public, max-age=604800, immutable')
+        elif path.endswith('.html') or path in ('/', ''):
+            # 入口 HTML 必须每次校验：否则升级后浏览器仍加载旧 bundle，
+            # 表现为「新功能不生效」（例如刷新后不置底）
+            self.send_header('Cache-Control', 'no-cache, must-revalidate')
         super().end_headers()
 
     def do_OPTIONS(self):

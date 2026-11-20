@@ -12,6 +12,10 @@
       <el-switch v-model="draft.behavior.wordWrap" aria-label="自动换行" />
     </div>
     <div class="field">
+      <div class="field-label"><span>SQL 快捷过滤</span><small>在过滤条显示「隐藏 SQL」开关，一键隐藏 SQL 语句行</small></div>
+      <el-switch v-model="draft.behavior.showSqlQuickFilter" aria-label="显示 SQL 快捷过滤" />
+    </div>
+    <div class="field">
       <div class="field-label"><span>超行折叠</span><small>仅折叠单条日志的预览，不是整页截断</small></div>
       <el-switch v-model="draft.behavior.foldOverLimit" aria-label="超行折叠" />
     </div>
@@ -24,21 +28,24 @@
       <span class="unit">行</span>
     </div>
     <div class="field">
-      <div class="field-label"><span>最大行数</span><small>单次展示的日志行上限</small></div>
-      <el-input-number
-        v-model="draft.behavior.maxLines"
-        :min="1000" :max="100000" :step="1000" controls-position="right" aria-label="最大行数"
-      />
-      <span class="unit">行</span>
-    </div>
-    <div class="field">
-      <div class="field-label"><span>尾部下载</span><small>每次请求文件末尾的大小</small></div>
+      <div class="field-label">
+        <span>尾部下载</span>
+        <small>每次请求文件末尾的大小（最大 {{ LOG_LIMITS.tailMB.max }} MB）；行数不再限制，由该值决定</small>
+      </div>
       <el-input-number
         v-model="draft.behavior.tailMB"
-        :min="1" :max="100" :step="1" controls-position="right" aria-label="尾部下载"
+        :min="LOG_LIMITS.tailMB.min"
+        :max="LOG_LIMITS.tailMB.max"
+        :step="LOG_LIMITS.tailMB.step"
+        controls-position="right"
+        aria-label="尾部下载"
       />
       <span class="unit">MB</span>
     </div>
+    <p v-if="heavy" class="heavy-tip">
+      <el-icon><WarningFilled /></el-icon>
+      尾部超过 {{ LOG_HEAVY_HINT.tailMB }} MB 时，拉取与渲染会明显变慢，请确认网络与内存。
+    </p>
 
     <p class="group-label">上下文弹窗</p>
     <div class="field">
@@ -81,12 +88,17 @@
 
 <script setup>
 /** 行为分区：数值区间沿用 CONTEXT_LIMITS，夹紧由页面保存时统一处理 */
-import { InfoFilled } from '@element-plus/icons-vue'
+import { computed } from 'vue'
+import { InfoFilled, WarningFilled } from '@element-plus/icons-vue'
 import { CONTEXT_LIMITS } from '../../constants/logContextConfig'
+import { LOG_LIMITS, LOG_HEAVY_HINT } from '../../constants/logLimits'
 
-defineProps({
+const props = defineProps({
   draft: { type: Object, required: true },
 })
+
+/** 超过推荐阈值时提示性能风险（不阻止保存） */
+const heavy = computed(() => Number(props.draft.behavior?.tailMB) > LOG_HEAVY_HINT.tailMB)
 </script>
 
 <style scoped>
@@ -104,6 +116,20 @@ defineProps({
 .field-label span { font-size: var(--fs-sm); font-weight: 650; color: var(--t1) }
 .field-label small { font-size: var(--fs-xs); color: var(--t3); line-height: 1.5 }
 .unit { font-size: var(--fs-sm); color: var(--t3); white-space: nowrap }
+.heavy-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--warn, #d29922) 40%, var(--bd));
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warn, #d29922) 10%, transparent);
+  color: var(--t2);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+.heavy-tip .el-icon { color: var(--warn, #d29922); margin-top: 2px; flex: none }
 .notes {
   display: flex; flex-direction: column; gap: var(--sp-2);
   margin-top: var(--sp-4); padding: var(--sp-3) var(--sp-4);

@@ -16,6 +16,22 @@
           <span class="path-file">{{ selectedFile || (nav.selectedLevel + '.log') }}</span>
         </div>
         <el-tooltip
+          v-if="serviceHosts.length > 1"
+          content="同一服务部署在多台机器，切换查看对应主机的日志"
+          placement="bottom"
+          :show-after="400"
+        >
+          <el-select
+            :model-value="nav.currentHost"
+            size="small"
+            class="tb-host"
+            aria-label="切换主机"
+            @update:model-value="nav.setHost"
+          >
+            <el-option v-for="h in serviceHosts" :key="h" :label="h" :value="h" />
+          </el-select>
+        </el-tooltip>
+        <el-tooltip
           :content="tools.drawerOpen.value ? '收起搜索工具' : '展开搜索工具（Ctrl/⌘ + F）'"
           placement="top"
           :show-after="400"
@@ -84,6 +100,8 @@
         role="log"
         :aria-busy="loading ? 'true' : 'false'"
         :aria-label="ariaLogLabel"
+        @wheel="cancelAutoBottom"
+        @touchstart="cancelAutoBottom"
         @scroll="onScroll"
       >
         <div v-if="loading" class="loading-panel">
@@ -165,7 +183,6 @@
 
       <div class="status">
         <span v-if="truncated" class="ui-chip ui-chip--warn">已截断（仅显示尾部）</span>
-        <span v-if="lineCapped" class="ui-chip">行数上限 {{ appliedMaxLines }}</span>
         <span class="ui-chip"><b>{{ displayLines }}</b> 行</span>
         <span class="ui-chip" :class="filteredRowCount ? 'ui-chip--accent' : ''"><b>{{ filteredRowCount }}</b> 过滤后</span>
         <span v-if="tools.activeFindQuery.value" class="ui-chip ui-chip--accent ui-find-chip" @click="tools.openDrawer()">
@@ -226,10 +243,13 @@ import LogScrollNav from './LogScrollNav.vue'
 const logs = useLogs()
 const settings = useSettings()
 const nav = useNavigation()
+/** 多实例服务的主机列表；长度 > 1 时才显示切换器 */
+const serviceHosts = computed(() => logs.getServiceHosts(nav.currentService))
 const toast = useToast()
 const {
   includeTerms,
   excludeTerms,
+  hideSql,
   clearTextFilters,
   textFilters,
 } = useLogViewFilters()
@@ -310,6 +330,8 @@ let resizeObserver = null
 let pendingScrollToEnd = false
 /** 进入日志（加载/切换）时的置底请求不受「自动滚动到末尾」设置限制 */
 let pendingScrollForce = false
+/** 自动置底的截止时间戳：大日志分批布局期间持续追底，用户滚动即清零 */
+let wantBottomUntil = 0
 let lastBox = { w: 0, h: 0 }
 const hlCache = new Map()
 
@@ -361,7 +383,7 @@ function refreshIndexHint() {
     indexHint.value = '索引未建立'
     return
   }
-  const meta = logs.getIndexMeta(svc.host, svc.app, nav.env)
+  const meta = logs.getIndexMeta(nav.currentHost, svc.app, nav.env)
   if (!meta?.updatedAt) {
     indexHint.value = '索引未建立'
     return
@@ -576,7 +598,8 @@ function safeHighlight(line, level, kw) {
   }
 }
 
-const logKey = computed(() => `${nav.env}|${nav.selectedIdx}|${nav.selectedLevel}`)
+// 包含当前主机：切换多实例主机时清空文件选择并重新加载
+const logKey = computed(() => `${nav.env}|${nav.selectedIdx}|${nav.currentHost}|${nav.selectedLevel}`)
 const serviceKey = computed(() => `${nav.env}|${nav.selectedIdx}`)
 
 function onScroll() {
@@ -615,6 +638,7 @@ async function rebuildViewRows() {
     lines: lines.value,
     includeTerms: includeTerms.value,
     excludeTerms: excludeTerms.value,
+    hideSql: hideSql.value,
     expandedIds: expandedIds.value,
     collapsedIds: collapsedIds.value,
     foldEnabled: foldEnabled.value,
@@ -643,7 +667,7 @@ function scheduleRebuild() {
 }
 
 watch(
-  [includeTerms, excludeTerms, expandedIds, collapsedIds, foldEnabled, foldMaxLines, wordWrap, wrapCols],
+  [includeTerms, excludeTerms, hideSql, expandedIds, collapsedIds, foldEnabled, foldMaxLines, wordWrap, wrapCols],
   () => {
     scheduleRebuild()
   },
@@ -665,23 +689,23 @@ async function ensureFileList({ force = false, keepSelection = false, hydrate = 
 
   const level = nav.selectedLevel
   ruleHint.value = (() => {
-    const r = logs.getLogFileRule(svc.host, svc.app, nav.env)
+    const r = logs.getLogFileRule(nav.currentHost, svc.app, nav.env)
     return r.desc || r.id || ''
   })()
   refreshIndexHint()
 
   if (hydrate && !force) {
-    const peeked = logs.peekLogFiles(svc.host, svc.app, level, nav.env)
+    const peeked = logs.peekLogFiles(nav.currentHost, svc.app, level, nav.env)
     if (peeked.length) applyFileList(peeked, keepSelection)
     else if (nav.routeFile) selectedFile.value = nav.routeFile
     else if (!selectedFile.value) {
-      selectedFile.value = logs.guessActiveFileName(svc.host, svc.app, level, nav.env)
+      selectedFile.value = logs.guessActiveFileName(nav.currentHost, svc.app, level, nav.env)
     }
   }
 
   filesLoading.value = true
   try {
-    const files = await logs.listLogFiles(svc.host, svc.app, level, {
+    const files = await logs.listLogFiles(nav.currentHost, svc.app, level, {
       force,
       envKey: nav.env,
       soft: !force,
@@ -761,11 +785,11 @@ async function loadLog({ skipList = false, force = false } = {}) {
   error.value = ''
 
   let knownLevels = nav.getLevels(svc)
-  let hasIndex = !!logs.getIndexMeta(svc.host, svc.app, nav.env)
+  let hasIndex = !!logs.getIndexMeta(nav.currentHost, svc.app, nav.env)
   let discoverFailed = false
   if (!hasIndex) {
     try {
-      await logs.discoverLevels(svc.host, svc.app, {
+      await logs.discoverLevels(nav.currentHost, svc.app, {
         force: true,
         envKey: nav.env,
         soft: false,
@@ -779,7 +803,7 @@ async function loadLog({ skipList = false, force = false } = {}) {
     }
     if (seq !== loadSeq) return
     knownLevels = nav.getLevels(svc)
-    hasIndex = !!logs.getIndexMeta(svc.host, svc.app, nav.env)
+    hasIndex = !!logs.getIndexMeta(nav.currentHost, svc.app, nav.env)
   }
 
   // 目录探测失败且没有本地索引：不再发起必然超时的正文请求，直接给出可诊断的原因
@@ -826,7 +850,7 @@ async function loadLog({ skipList = false, force = false } = {}) {
     }
 
     const filename = selectedFile.value || nav.routeFile || undefined
-    const data = await logs.fetchLog(svc.host, svc.app, requestedLevel, filename, {
+    const data = await logs.fetchLog(nav.currentHost, svc.app, requestedLevel, filename, {
       force,
       envKey: nav.env,
       signal: controller.signal,
@@ -855,7 +879,7 @@ async function loadLog({ skipList = false, force = false } = {}) {
       logFiles.value.some((f) => f.name === selectedFile.value && !f.active)
     if (missing && !isExplicitArchive) {
       const fallback = await logs.resolveFallbackLevel(
-        svc.host, svc.app, requestedLevel, svc.levels, nav.env,
+        nav.currentHost, svc.app, requestedLevel, svc.levels, nav.env,
       )
       if (seq !== loadSeq) return
       if (fallback) {
@@ -867,7 +891,7 @@ async function loadLog({ skipList = false, force = false } = {}) {
         return
       }
       const after = nav.getLevels(svc)
-      if (logs.getIndexMeta(svc.host, svc.app, nav.env) && after.length === 0) {
+      if (logs.getIndexMeta(nav.currentHost, svc.app, nav.env) && after.length === 0) {
         error.value = '该应用目录下未发现可用级别日志'
         resetViewData()
         return
@@ -920,6 +944,9 @@ function scrollToBottom() {
  */
 function scrollToEnd(force = false) {
   if (!force && !autoScroll.value) return
+  // 置底窗口：大日志的布局会分多批更新高度，窗口内每次高度变化都继续追到底；
+  // 用户滚轮 / 触摸时立刻取消，避免和手动滚动打架。
+  wantBottomUntil = performance.now() + 3000
   if (!logWrapVisible()) {
     pendingScrollToEnd = true
     if (force) pendingScrollForce = true
@@ -927,18 +954,25 @@ function scrollToEnd(force = false) {
   }
   pendingScrollToEnd = false
   pendingScrollForce = false
-  nextTick(() => {
-    requestAnimationFrame(() => {
-      const el = logWrapRef.value
-      if (!logWrapVisible()) {
-        pendingScrollToEnd = true
-        if (force) pendingScrollForce = true
-        return
-      }
-      el.scrollTop = el.scrollHeight
-      scrollTop.value = el.scrollTop
-    })
-  })
+  pumpToBottom()
+}
+
+/** 用户主动滚动即退出自动置底窗口 */
+function cancelAutoBottom() {
+  wantBottomUntil = 0
+}
+
+function pumpToBottom() {
+  const el = logWrapRef.value
+  if (!logWrapVisible()) return
+  el.scrollTop = el.scrollHeight
+  scrollTop.value = el.scrollTop
+  const expected = totalHeight.value
+  const heightReady = el.scrollHeight >= expected - 2
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2
+  if ((!heightReady || !atBottom) && performance.now() < wantBottomUntil) {
+    requestAnimationFrame(pumpToBottom)
+  }
 }
 
 function toggleWordWrap() {
@@ -1008,6 +1042,20 @@ watch(
   () => nextTick(remeasureAndRestoreScroll),
 )
 
+/**
+ * 大日志的虚拟列表高度会分多批更新（Worker 返回、行高重算），
+ * 单次「滚到末尾」可能差几十到几百像素；置底窗口内高度一变就再追一次。
+ */
+watch(totalHeight, () => {
+  if (performance.now() > wantBottomUntil) return
+  nextTick(() => {
+    const el = logWrapRef.value
+    if (!el || !logWrapVisible()) return
+    el.scrollTop = el.scrollHeight
+    scrollTop.value = el.scrollTop
+  })
+})
+
 watch(dateFilter, (d) => {
   const list = filteredLogFiles.value
   if (!list.length) return
@@ -1071,7 +1119,7 @@ onMounted(() => {
   unsubIndex = logs.onLogIndexUpdate((key, entry, meta) => {
     const svc = nav.currentService
     if (!svc || !entry) return
-    if (key !== `${svc.host}|${svc.app}`) return
+    if (key !== `${nav.currentHost}|${svc.app}`) return
     const list = entry.archives?.[nav.selectedLevel] || []
     applyFileList(list, true)
     refreshIndexHint()
@@ -1163,6 +1211,8 @@ onUnmounted(() => {
 .path-mod { color: var(--t2); font-weight: 600; overflow: hidden; text-overflow: ellipsis }
 .path-file { color: var(--t1); font-weight: 600; overflow: hidden; text-overflow: ellipsis }
 .tb-actions { flex-shrink: 0 }
+/* 多实例主机切换：窄屏也保持一行，不挤压路径 */
+.tb-host { width: 138px; flex-shrink: 0 }
 .tb-tools {
   display: inline-flex;
   align-items: center;

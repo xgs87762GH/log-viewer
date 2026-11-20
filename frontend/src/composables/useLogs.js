@@ -8,6 +8,7 @@ import {
 import { extractLogFilesFromDirHtml } from '../utils/dirListing'
 import { downloadLogFile as streamDownload } from '../utils/logDownload'
 import { buildDownloadName } from '../utils/downloadName'
+import { getServiceHosts, serviceMatchesHost } from '../utils/serviceHosts'
 import {
   moduleKey,
   shouldSoftRefresh,
@@ -167,9 +168,9 @@ function getLogFileRule(host, app, envKey) {
   const env = envKey
     ? cfg.environments?.[envKey]
     : Object.values(cfg.environments || {}).find((e) =>
-        (e.services || []).some((s) => s.host === host && s.app === app),
+        (e.services || []).some((s) => s.app === app && serviceMatchesHost(s, host)),
       )
-  const svc = (env?.services || []).find((s) => s.host === host && s.app === app)
+  const svc = (env?.services || []).find((s) => s.app === app && serviceMatchesHost(s, host))
   return resolveLogFileRule(svc?.logFile ?? env?.logFile ?? cfg.logFile)
 }
 
@@ -182,10 +183,10 @@ function findService(host, app, envKey) {
   const cfg = state.config || {}
   const envs = cfg.environments || {}
   if (envKey && envs[envKey]) {
-    return (envs[envKey].services || []).find((s) => s.host === host && s.app === app) || null
+    return (envs[envKey].services || []).find((s) => s.app === app && serviceMatchesHost(s, host)) || null
   }
   for (const env of Object.values(envs)) {
-    const hit = (env.services || []).find((s) => s.host === host && s.app === app)
+    const hit = (env.services || []).find((s) => s.app === app && serviceMatchesHost(s, host))
     if (hit) return hit
   }
   return null
@@ -545,6 +546,14 @@ function writeLogCache(cacheKey, data, meta = null) {
   }
 }
 
+/** 全部行（去掉文件末尾换行产生的空行）；作为「不限行数」的路径 */
+export function splitAllLines(text) {
+  if (!text) return []
+  const lines = String(text).split('\n')
+  if (lines.length && lines[lines.length - 1] === '') lines.pop()
+  return lines
+}
+
 /** 从文本末尾取最多 maxLines 行，避免对大尾包做全量 split */
 function takeLastLines(text, maxLines) {
   const n = Math.max(1, Number(maxLines) || 10000)
@@ -600,9 +609,14 @@ async function fetchLog(host, app, level, filename, { force = false, envKey, sig
   try {
     const task = trackInflight(`log:${cacheKey}`, async (taskSignal) => {
       const params = new URLSearchParams({ url, tail: String(tailBytes) })
+      // 尾部越大超时越长：按每 MB 约 3s 估算，至少 45s，最长 10 分钟
+      const timeoutMs = Math.min(
+        600_000,
+        Math.max(LOG_TIMEOUT_MS, Math.round(tailMB * 3000)),
+      )
       const res = await requestRaw('/api/proxy?' + params.toString(), {
         signal: taskSignal,
-        timeoutMs: LOG_TIMEOUT_MS,
+        timeoutMs,
       })
       try {
         if (!res.ok) {
@@ -622,10 +636,11 @@ async function fetchLog(host, app, level, filename, { force = false, envKey, sig
           if (firstNl > 0) text = text.slice(firstNl + 1)
         }
 
-        const lines = takeLastLines(text, maxLines)
-        // 尽早释放大字符串引用（takeLastLines 已切片）
+        // maxLines > 0 才截断；为 0 表示不限行数（由 tailMB 决定实际行数）
+        const lines = maxLines > 0 ? takeLastLines(text, maxLines) : splitAllLines(text)
+        // 尽早释放大字符串引用
         text = ''
-        const lineCapped = downloadedBytes > 0 && lines.length >= maxLines
+        const lineCapped = maxLines > 0 && downloadedBytes > 0 && lines.length >= maxLines
 
         const data = {
           lines,
@@ -690,6 +705,7 @@ const instance = Object.assign(state, {
   listLogFiles,
   onLogIndexUpdate: onIndexUpdate,
   getDefaultFile,
+  getServiceHosts,
   getLevels,
   getIndexMeta,
   clearLevelsCache,

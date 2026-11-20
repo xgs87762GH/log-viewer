@@ -1,7 +1,9 @@
 /**
  * 纯函数文本过滤匹配（主线程 / Worker 共用，无 Vue 依赖）
  */
-export function matchBlobFilters(blob, includes = [], excludes = []) {
+import { isSqlLine } from './logSqlFilter.js'
+
+export function matchBlobFilters(blob, includes = [], excludes = [], hideSql = false) {
   const lower = String(blob ?? '').toLowerCase()
   for (const ex of excludes) {
     if (ex && lower.includes(String(ex).toLowerCase())) return false
@@ -9,6 +11,8 @@ export function matchBlobFilters(blob, includes = [], excludes = []) {
   for (const inc of includes) {
     if (inc && !lower.includes(String(inc).toLowerCase())) return false
   }
+  // 快捷过滤：隐藏 SQL 语句行（与文本条件叠加，任一不满足即过滤掉）
+  if (hideSql && isSqlLine(blob)) return false
   return true
 }
 
@@ -18,7 +22,7 @@ export function matchBlobFilters(blob, includes = [], excludes = []) {
  * 无条件时返回 null，调用方直接跳过过滤（语义与 matchBlobFilters 等价）。
  * @returns {((lowerBlob: string) => boolean) | null}
  */
-export function compileFilters(includes = [], excludes = []) {
+export function compileFilters(includes = [], excludes = [], hideSql = false) {
   const norm = (list) =>
     list
       .filter((s) => s != null && String(s) !== '')
@@ -26,7 +30,7 @@ export function compileFilters(includes = [], excludes = []) {
       .sort((a, b) => b.length - a.length)
   const inc = norm(includes)
   const exc = norm(excludes)
-  if (!inc.length && !exc.length) return null
+  if (!inc.length && !exc.length && !hideSql) return null
   return (lowerBlob) => {
     for (const ex of exc) {
       if (lowerBlob.includes(ex)) return false
@@ -34,6 +38,7 @@ export function compileFilters(includes = [], excludes = []) {
     for (const term of inc) {
       if (!lowerBlob.includes(term)) return false
     }
+    if (hideSql && isSqlLine(lowerBlob)) return false
     return true
   }
 }

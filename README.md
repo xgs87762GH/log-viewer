@@ -2,7 +2,7 @@
 
 内网日志浏览工具：本地 Python 代理通过 HTTP Range 拉取 LogIndex（或兼容服务）的日志尾部，Vue 3 前端提供仪表盘、日志聚合、访问统计与设置。**日志正文只存在于浏览器内存，不落盘。**
 
-- 当前版本 `1.1.0`（[`VERSION`](VERSION)）
+- 当前版本 `1.2.0`（[`VERSION`](VERSION)）
 - 仓库：<https://github.com/xgs87762GH/log-viewer>
 
 ## 功能速览
@@ -67,7 +67,7 @@ python manage.py open     # 打开浏览器
 | --- | --- |
 | `python manage.py start` | 启动（缺 `dist` 或源码较新时自动构建）；端口被其它程序占用时会报错并给出占用进程，不再静默跳过 |
 | `python manage.py start --port 8091` | 换端口启动（默认 8090）；`stop` / `status` / `restart` 同样支持 `--port` |
-| `python manage.py start --rebuild` | 启动/重启前强制重建前端（时间戳不可信或 `dist` 损坏时用；普通启动已自动检测源码、`public`、`package-lock.json` 是否更新） |
+| `python manage.py start --rebuild` | 启动时强制重建前端；**重启默认就会重建**，普通启动仅在 `dist` 缺失或源码 / `public` / `package-lock.json` 更新时构建，跳过时会明确打印提示 |
 | `python manage.py stop` / `restart` | 停止 / 重启 |
 | `python manage.py status` / `logs` | 查看状态 / 日志 |
 | `python manage.py build` | 仅构建前端（缺 `node_modules` 时先 `npm install`） |
@@ -79,7 +79,7 @@ python manage.py open     # 打开浏览器
 
 | 文件 | 关键字段 |
 | --- | --- |
-| [`config/logs.json.example`](config/logs.json.example) | `baseUrl`、`logFile.preset`、`environments.*.services[]`（`module` / `host` / `app` / 可选 `levels`）；服务可覆盖 `baseUrl` / `urlStyle` / `logFile` |
+| [`config/logs.json.example`](config/logs.json.example) | `baseUrl`、`logFile.preset`、`environments.*.services[]`（`module` / `host` / `app` / 可选 `levels` / 可选 `hosts`）；服务可覆盖 `baseUrl` / `urlStyle` / `logFile`；同一服务部署在多台机器时用 `hosts` 列出全部主机（`host` 为默认值），日志页工具栏会出现主机切换器 |
 | [`config/access.json.example`](config/access.json.example) | `enabled`、`heartbeatSec`、`onlineTimeoutSec`、`retainDays`、`statsAllowIps` |
 | [`.env.example`](.env.example) | `LOG_VIEWER_USER` / `LOG_VIEWER_PASS`（由 `envfile.py` 加载） |
 

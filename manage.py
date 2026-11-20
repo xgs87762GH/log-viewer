@@ -66,9 +66,9 @@ IS_WIN = os.name == "nt"
 def read_version() -> str:
     try:
         # utf-8-sig：容忍外部编辑器 / PowerShell 写入的 BOM
-        return (HERE / "VERSION").read_text(encoding="utf-8-sig").strip() or "1.1.0"
+        return (HERE / "VERSION").read_text(encoding="utf-8-sig").strip() or "1.2.0"
     except Exception:
-        return "1.1.0"
+        return "1.2.0"
 
 
 APP_VERSION = read_version()
@@ -407,6 +407,9 @@ def start_server(ensure_ui: bool = True, force_build: bool = False) -> bool:
             print("  [*] 检测到前端源码新于 dist，重新构建...")
             if not build_frontend(force=True):
                 return False
+        else:
+            # 明确告诉用户检查过并跳过，避免误以为「没构建 = 改动没生效」
+            print("  [*] 前端 dist 已是最新，跳过构建（需要强制重建用 --rebuild）")
 
     if port_in_use(APP_PORT):
         pids = load_pids()
@@ -602,7 +605,8 @@ def show_status():
     pause()
 
 
-def restart_all(force_build: bool = False):
+def restart_all(force_build: bool = True):
+    """重启默认强制重建前端：重启的语义就是让改动立即生效。"""
     print("\n重启服务...")
     stop_own_services()
     time.sleep(0.8)
@@ -749,9 +753,9 @@ MENU = f"""
 ============================================
   Log Viewer  v{APP_VERSION}  管理工具
 ============================================
-  1. 启动（单进程，自动构建前端）
+  1. 启动（单进程，按需构建前端）
   2. 关闭
-  3. 重启（自动构建前端）
+  3. 重启（强制重建前端）
   4. 查看状态
   5. 查看运行日志
   6. 打开浏览器
@@ -811,7 +815,7 @@ def main():
             "start": lambda: start_all(force_build=force_rebuild),
             "stop": stop_all,
             "status": show_status,
-            "restart": lambda: restart_all(force_build=force_rebuild),
+            "restart": restart_all,
             "logs": view_log_menu,
             "build": lambda: (print("\n构建前端..."), build_frontend(force=True), pause()),
             "dev": start_dev,

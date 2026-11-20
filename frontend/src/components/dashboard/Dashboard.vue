@@ -41,7 +41,10 @@
       <section class="kpi-row" aria-label="环境概览指标">
         <div class="ui-surface ui-kpi">
           <div class="ui-kpi-icon"><el-icon><Monitor /></el-icon></div>
-          <div><div class="ui-kpi-value">{{ stats.modules }}</div><div class="ui-kpi-label">模块</div></div>
+          <div>
+            <div class="ui-kpi-value">{{ stats.modules }}</div>
+            <div class="ui-kpi-label">模块 · {{ stats.instances }} 实例</div>
+          </div>
         </div>
         <div class="ui-surface ui-kpi">
           <div class="ui-kpi-icon ui-kpi-icon--info"><el-icon><Document /></el-icon></div>
@@ -49,7 +52,7 @@
         </div>
         <div class="ui-surface ui-kpi">
           <div class="ui-kpi-icon ui-kpi-icon--trc"><el-icon><Files /></el-icon></div>
-          <div><div class="ui-kpi-value">{{ stats.probed }}</div><div class="ui-kpi-label">已探测</div></div>
+          <div><div class="ui-kpi-value">{{ stats.probed }}</div><div class="ui-kpi-label">已探测实例</div></div>
         </div>
         <div class="ui-surface ui-kpi">
           <div class="ui-kpi-icon ui-kpi-icon--warn"><el-icon><Link /></el-icon></div>
@@ -95,84 +98,102 @@
               ><el-icon><Menu /></el-icon></button>
             </el-tooltip>
           </div>
-          <span class="ui-chip ui-chip--accent">{{ filteredServices.length }} / {{ stats.modules }}</span>
+          <span class="ui-chip ui-chip--accent">{{ filteredInstances }} / {{ stats.instances }} 实例</span>
         </div>
       </section>
 
-      <!-- 模块卡片 -->
-      <section class="svc-grid" :class="{ compact: density === 'compact' }" aria-label="模块列表">
-        <article
-          v-for="item in filteredServices"
-          :key="item.svc.app + item.i"
-          class="svc-card ui-surface"
+      <!-- 服务分组：组头是一个服务，组内每个实例（host）一张卡片 -->
+      <div class="svc-groups" aria-label="服务与实例列表">
+        <section
+          v-for="group in filteredGroups"
+          :key="group.svc.app + group.i"
+          class="svc-group"
         >
-          <header class="card-hd">
-            <span class="ui-dot" :class="dotClass(item)" />
-            <div class="card-title">
-              <div class="nm" :title="item.svc.module">{{ item.svc.module }}</div>
-              <div class="sub">
-                <span class="sub-app" :title="item.svc.app">{{ item.svc.app }}</span>
-                <span class="sub-sep" aria-hidden="true">·</span>
-                <span class="sub-host" :title="item.svc.host">{{ item.svc.host }}</span>
-              </div>
-            </div>
-            <span class="ui-chip" :class="item.levels.length ? 'ui-chip--accent' : ''">
-              {{ item.levels.length }} 级别
+          <header class="group-hd" :class="{ 'is-multi': group.rows.length > 1 }">
+            <span class="ui-dot" :class="dotClass(group)" />
+            <h3 class="group-title" :title="group.svc.module">{{ group.svc.module }}</h3>
+            <span class="group-app" :title="group.svc.app">{{ group.svc.app }}</span>
+            <span class="ui-chip" :class="group.rows.length > 1 ? 'ui-chip--accent' : ''">
+              {{ group.rows.length }} 实例
             </span>
           </header>
 
-          <div v-if="item.levels.length" class="card-levels">
-            <div v-for="lv in item.levels" :key="lv" class="lv-group">
-              <button
-                type="button"
-                class="lv-open"
-                :class="`tone-${levelTagType(lv)}`"
-                :title="item.levelSizes[lv] ? `打开 ${lv} 日志聚合（当前文件 ${item.levelSizes[lv]}）` : `打开 ${lv} 日志聚合`"
-                @click="nav.openLog(item.i, lv)"
-              >{{ lv }}<small v-if="item.levelSizes[lv]" class="lv-size">{{ item.levelSizes[lv] }}</small></button>
-              <span class="lv-sep" aria-hidden="true" />
-              <el-tooltip :content="`新标签打开 ${lv} 日志文件`" placement="top" :show-after="400">
-                <a
-                  class="lv-act"
-                  :href="item.levelUrls[lv]"
-                  target="_blank"
-                  :aria-label="`新标签打开 ${lv} 日志文件`"
-                ><el-icon><Link /></el-icon></a>
-              </el-tooltip>
-              <el-tooltip content="下载该级别日志文件" placement="top" :show-after="400">
-                <button
-                  type="button"
-                  class="lv-act"
-                  :disabled="download.active && download.key !== downloadKey(item.svc, lv)"
-                  :aria-label="`下载 ${lv} 日志文件`"
-                  @click="downloadLevel(item.svc, lv)"
-                ><el-icon><Loading v-if="isDownloading(item.svc, lv)" class="is-loading" /><Download v-else /></el-icon></button>
-              </el-tooltip>
-            </div>
-          </div>
-          <div v-else class="card-note" :class="{ 'card-note--warn': item.probed }">
-            <el-icon><InfoFilled /></el-icon>
-            {{ item.probed ? '该目录无业务级别日志' : '尚未探测，可点右上角「探测级别」' }}
-          </div>
+          <div class="svc-grid" :class="{ compact: density === 'compact' }">
+            <article v-for="item in group.rows" :key="item.host" class="svc-card ui-surface">
+              <header class="card-hd">
+                <span class="ui-dot" :class="item.levels.length ? 'ui-dot--ok' : (item.probed ? 'ui-dot--warn' : '')" />
+                <div class="card-title">
+                  <div class="nm" :title="item.host">{{ item.host }}</div>
+                  <div class="sub">
+                    <span class="sub-app">{{ item.levels.length }} 级别</span>
+                    <span v-if="item.probed" class="sub-sep" aria-hidden="true">·</span>
+                    <span v-if="item.probed" class="sub-host">已探测</span>
+                  </div>
+                </div>
+                <el-tooltip content="在日志页只看这台" placement="top" :show-after="400">
+                  <button
+                    type="button"
+                    class="ui-icon-btn"
+                    :aria-label="`在日志页打开 ${item.host}`"
+                    @click="nav.openLog(group.i, nav.selectedLevel, nav.env, item.host)"
+                  ><el-icon><TopRight /></el-icon></button>
+                </el-tooltip>
+              </header>
 
-          <footer class="card-ft">
-            <a class="ft-link" :href="item.dirUrl" target="_blank">
-              <el-icon><Folder /></el-icon> 目录
-            </a>
-            <el-tooltip content="复制全部日志链接" placement="top" :show-after="400">
-              <button
-                type="button"
-                class="ui-icon-btn"
-                :disabled="!item.levels.length"
-                aria-label="复制全部日志链接"
-                @click="copyUrls(item)"
-              ><el-icon><DocumentCopy /></el-icon></button>
-            </el-tooltip>
-          </footer>
-        </article>
-      </section>
+              <div v-if="item.levels.length" class="card-levels">
+                <div v-for="lv in item.levels" :key="lv" class="lv-group">
+                  <button
+                    type="button"
+                    class="lv-open"
+                    :class="`tone-${levelTagType(lv)}`"
+                    :title="item.levelSizes[lv] ? `打开 ${lv} 日志聚合（当前文件 ${item.levelSizes[lv]}）` : `打开 ${lv} 日志聚合`"
+                    @click="nav.openLog(group.i, lv, nav.env, item.host)"
+                  >{{ lv }}<small v-if="item.levelSizes[lv]" class="lv-size">{{ item.levelSizes[lv] }}</small></button>
+                  <span class="lv-sep" aria-hidden="true" />
+                  <el-tooltip :content="`新标签打开 ${lv} 日志文件`" placement="top" :show-after="400">
+                    <a
+                      class="lv-act"
+                      :href="item.levelUrls[lv]"
+                      target="_blank"
+                      :aria-label="`新标签打开 ${lv} 日志文件`"
+                    ><el-icon><Link /></el-icon></a>
+                  </el-tooltip>
+                  <el-tooltip content="下载该级别日志文件" placement="top" :show-after="400">
+                    <button
+                      type="button"
+                      class="lv-act"
+                      :disabled="download.active && download.key !== downloadKey(item, lv)"
+                      :aria-label="`下载 ${lv} 日志文件`"
+                      @click="downloadLevel(item, lv)"
+                    ><el-icon><Loading v-if="isDownloading(item, lv)" class="is-loading" /><Download v-else /></el-icon></button>
+                  </el-tooltip>
+                </div>
+              </div>
+              <div v-else class="card-note" :class="{ 'card-note--warn': item.probed }">
+                <el-icon><InfoFilled /></el-icon>
+                {{ item.probed ? '该目录无业务级别日志' : '尚未探测，可点右上角「探测级别」' }}
+              </div>
 
-      <div v-if="!filteredServices.length" class="ui-empty">
+              <footer class="card-ft">
+                <a class="ft-link" :href="item.dirUrl" target="_blank">
+                  <el-icon><Folder /></el-icon> 目录
+                </a>
+                <el-tooltip content="复制该实例全部日志链接" placement="top" :show-after="400">
+                  <button
+                    type="button"
+                    class="ui-icon-btn"
+                    :disabled="!item.levels.length"
+                    aria-label="复制该实例全部日志链接"
+                    @click="copyUrls(item)"
+                  ><el-icon><DocumentCopy /></el-icon></button>
+                </el-tooltip>
+              </footer>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <div v-if="!filteredGroups.length" class="ui-empty">
         <div class="ui-empty-icon"><el-icon><Search /></el-icon></div>
         <div class="ui-empty-title">没有匹配的模块</div>
         <div class="ui-empty-desc">换个关键词，或关闭「仅已探测」筛选后重试。</div>
@@ -226,7 +247,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
   Loading, DocumentCopy, Download, Search, Link, Folder, Monitor,
-  Document, Files, Refresh, Grid, Menu, InfoFilled, Close,
+  Document, Files, Refresh, Grid, Menu, InfoFilled, Close, TopRight,
 } from '@element-plus/icons-vue'
 import { useLogs } from '../../composables/useLogs'
 import { useNavigation } from '../../composables/useNavigation'
@@ -256,47 +277,75 @@ const envLabel = computed(() => {
   return `${info.icon || ''} ${info.label || nav.env}`.trim()
 })
 
-/** 一次性算好级别、探测状态与全部直链（显式 envKey），模板只读结果 */
-const serviceRows = computed(() => nav.services.map((svc, i) => {
+/**
+ * 以服务为组，每个实例（host）一张卡片。
+ * 级别、直链、目录与探测状态都按实例单独计算，模板只读结果。
+ */
+const serviceGroups = computed(() => nav.services.map((svc, i) => {
   const envKey = nav.env
-  const levels = nav.getLevels(svc)
-  const levelUrls = {}
-  const levelSizes = {}
-  for (const lv of levels) {
-    levelUrls[lv] = logs.buildLogUrl(svc.host, svc.app, lv, undefined, envKey)
-    levelSizes[lv] = logs.getActiveFileSize(svc.host, svc.app, lv, envKey)
-  }
+  const hosts = logs.getServiceHosts(svc)
+  const rows = hosts.map((host) => {
+    const levels = logs.getLevels(host, svc.app, svc.levels, envKey)
+    const levelUrls = {}
+    const levelSizes = {}
+    for (const lv of levels) {
+      levelUrls[lv] = logs.buildLogUrl(host, svc.app, lv, undefined, envKey)
+      levelSizes[lv] = logs.getActiveFileSize(host, svc.app, lv, envKey)
+    }
+    return {
+      host,
+      svc,
+      i,
+      levels,
+      levelUrls,
+      levelSizes,
+      dirUrl: logs.buildDirUrl(host, svc.app, envKey),
+      probed: !!logs.getIndexMeta(host, svc.app, envKey),
+    }
+  })
   return {
     svc,
     i,
-    levels,
-    levelUrls,
-    levelSizes,
-    dirUrl: logs.buildDirUrl(svc.host, svc.app, envKey),
-    probed: !!logs.getIndexMeta(svc.host, svc.app, envKey),
+    rows,
+    probed: rows.some((r) => r.probed),
+    hasLevels: rows.some((r) => r.levels.length),
   }
 }))
 
-const filteredServices = computed(() => {
+const filteredGroups = computed(() => {
   const q = search.value.trim().toLowerCase()
-  return serviceRows.value.filter(({ svc, levels, probed }) => {
-    if (onlyProbed.value && !probed) return false
-    if (!q) return true
-    return [svc.module, svc.app, svc.host, levels.join(' ')]
-      .some((v) => String(v || '').toLowerCase().includes(q))
-  })
+  return serviceGroups.value
+    .map((group) => {
+      const rows = group.rows.filter((row) => {
+        if (onlyProbed.value && !row.probed) return false
+        if (!q) return true
+        return [group.svc.module, group.svc.app, row.host, row.levels.join(' ')]
+          .some((v) => String(v || '').toLowerCase().includes(q))
+      })
+      return { ...group, rows }
+    })
+    .filter((group) => group.rows.length > 0)
 })
 
-const stats = computed(() => ({
-  modules: serviceRows.value.length,
-  levels: serviceRows.value.reduce((n, r) => n + r.levels.length, 0),
-  probed: serviceRows.value.filter((r) => r.probed).length,
-  mro: nav.mro.length,
-}))
+const filteredInstances = computed(() =>
+  filteredGroups.value.reduce((n, g) => n + g.rows.length, 0),
+)
 
-function dotClass(item) {
-  if (item.levels.length) return 'ui-dot--ok'
-  return item.probed ? 'ui-dot--warn' : ''
+const stats = computed(() => {
+  const groups = serviceGroups.value
+  const rows = groups.flatMap((g) => g.rows)
+  return {
+    modules: groups.length,
+    instances: rows.length,
+    levels: rows.reduce((n, r) => n + r.levels.length, 0),
+    probed: rows.filter((r) => r.probed).length,
+    mro: nav.mro.length,
+  }
+})
+
+function dotClass(group) {
+  if (group.hasLevels) return 'ui-dot--ok'
+  return group.probed ? 'ui-dot--warn' : ''
 }
 
 function resetFilters() {
@@ -357,12 +406,12 @@ function copyUrls(item) {
   })
 }
 
-function downloadKey(svc, lv) {
-  return `${svc.host}|${svc.app}|${lv}`
+function downloadKey(item, lv) {
+  return `${item.host}|${item.svc.app}|${lv}`
 }
 
-function isDownloading(svc, lv) {
-  return download.active && download.key === downloadKey(svc, lv)
+function isDownloading(item, lv) {
+  return download.active && download.key === downloadKey(item, lv)
 }
 
 function fmtBytes(n) {
@@ -372,21 +421,22 @@ function fmtBytes(n) {
   return `${(b / 1048576).toFixed(1)} MB`
 }
 
-async function downloadLevel(svc, lv) {
+async function downloadLevel(item, lv) {
   if (download.active) return
+  const svc = item.svc
   const controller = new AbortController()
   downloadAbort = controller
   Object.assign(download, {
     active: true,
-    key: downloadKey(svc, lv),
-    label: `${svc.module || svc.app} · ${lv}`,
+    key: downloadKey(item, lv),
+    label: `${svc.module || svc.app} · ${item.host} · ${lv}`,
     received: 0,
     total: 0,
     percent: 0,
   })
   lastProgressAt = 0
   try {
-    const { filename, size } = await logs.downloadLogFile(svc.host, svc.app, lv, undefined, {
+    const { filename, size } = await logs.downloadLogFile(item.host, svc.app, lv, undefined, {
       envKey: nav.env,
       signal: controller.signal,
       onProgress: (received, total) => {
@@ -535,6 +585,50 @@ onBeforeUnmount(() => {
   border-color: color-mix(in srgb, var(--ac) 42%, var(--bd));
   background: var(--surf-active);
 }
+
+/* ── 服务分组：组头 + 实例卡片网格 ── */
+.svc-groups { display: flex; flex-direction: column; gap: var(--sp-6) }
+.svc-group { display: flex; flex-direction: column; gap: var(--sp-3) }
+
+/* 组头：左侧色条区分多实例，底部细线与卡片分组 */
+.group-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  /* 左侧统一留白：多实例的色条画在留白里，保证组头起点一致 */
+  padding: 0 var(--sp-2) var(--sp-2);
+  border-bottom: 1px solid var(--bd);
+}
+.group-hd.is-multi { box-shadow: inset 3px 0 0 var(--ac) }
+.group-hd .ui-dot { flex: none }
+.group-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: var(--t1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 应用名做成等宽小胶囊，与中文模块名形成层级 */
+.group-app {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  background: var(--s2);
+  color: var(--t3);
+  font-family: var(--font-log);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.group-hd .ui-chip { margin-left: auto; flex: none }
 
 /* ── 模块卡片 ── */
 .svc-grid {

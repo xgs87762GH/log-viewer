@@ -97,6 +97,9 @@ App 外壳
 - 静态 token、`Element Plus` 桥接与可复用原子类只在 `global.css`：`.ui-eyebrow` / `.ui-grad-text` / `.ui-surface` / `.ui-kpi*` / `.ui-chip*` / `.ui-dot*` / `.ui-icon-btn` / `.ui-empty*` / `.ui-toolbar-group` / `.ui-divider-v`。
 - 图标按钮必须同时有 `el-tooltip` 与 `aria-label`；所有交互元素保留 `focus-visible`。
 - 上下文弹窗高度自适应：弹窗 `max-height: calc(100vh - 3vh - 20px)`，标题与操作条固定，日志区 `flex: 1` 占满剩余高度；遮罩层锁定 `overflow: hidden`，禁止整窗随页面滚动。
+- 多实例服务：`services[].host` 是默认主机，`services[].hosts` 列出全部主机；导航层的 `currentHost` 是唯一请求主机来源（`getLevels`、`buildLogUrl`、索引 key 都按它），禁止直接读 `svc.host` 拼请求。切换主机等同切换日志源：清空文件选择、按当前主机重新探测目录。历史文件一律按更新时间倒序（活跃置顶 → 日期降序 → 序号降序），排序统一走 `utils/logFileFilter.js`，不在组件里重复实现。
+- 仪表盘按「服务 → 实例」两级展示：`.`svc-group` 为服务分组，组头只出现一次，组内 `.svc-card` 对应 `hosts` 中的一台；卡片的级别、大小、目录、下载与探测状态都必须按该实例计算，不允许回退到 `svc.host`。进入日志页时通过 `openLog(idx, level, env, host)` 把实例带过去。
+- 日志行数不再设上限：`getFetchLimits().maxLines` 恒为 0，实际行数由 `tailMB` 决定；状态栏只统计行数，不再显示「行数上限」。快捷过滤（隐藏 SQL）由 `utils/logSqlFilter.js` 的 `isSqlLine` 判定，主线程与 Worker 必须走同一函数，禁止在组件里另写正则。
 - 提示只用 `useToast`（按需引入 `ElMessage`），不要全量注册 Element Plus。
 - **v-html 产出的样式必须写在 `global.css`**：日志行、级别色、三层高亮（`hit` / `hl` / `find-hit`）与当前命中行都依赖它。追加高亮只接受 class 白名单，防止注入。
 - 行操作项 hover 才出现，绝不撑开行高；工具条不做级别二次过滤（文件已按级别区分）。

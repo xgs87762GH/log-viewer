@@ -72,8 +72,11 @@ const emit = defineEmits([
 ])
 
 function optionLabel(f) {
-  if (f.active) return `当前（${f.name}）`
-  return f.idx != null && f.idx > 0 ? `${f.date} #${f.idx}` : (f.date || f.name)
+  const base = f.active
+    ? `当前（${f.name}）`
+    : (f.idx != null && f.idx > 0 ? `${f.date} #${f.idx}` : (f.date || f.name))
+  // 大小来自目录 HTML，已有数据，仅做展示；目录未给出时为空
+  return f.size ? `${base} · ${f.size}` : base
 }
 </script>
 

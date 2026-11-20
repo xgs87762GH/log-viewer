@@ -21,6 +21,8 @@ const state = reactive({
   env: 'DEV',
   selectedIdx: 0,
   selectedLevel: 'INFO',
+  /** 当前服务下选中的主机（多实例部署时切换）；空表示用服务的默认 host */
+  activeHost: '',
   /** 地址栏中的历史文件名（可选） */
   routeFile: '',
   navL1Collapsed: localStorage.getItem(L1_KEY) === '1',
@@ -32,6 +34,13 @@ const access = useAccessLog()
 
 const services = computed(() => logs.getServices(state.env))
 const currentService = computed(() => services.value[state.selectedIdx])
+/** 当前实际请求使用的主机：多实例服务下由用户切换，否则回落默认 host */
+const currentHost = computed(() => {
+  const svc = currentService.value
+  const hosts = logs.getServiceHosts(svc)
+  if (state.activeHost && hosts.includes(state.activeHost)) return state.activeHost
+  return svc?.host || hosts[0] || ''
+})
 const mro = computed(() => logs.getMro(state.env))
 const currentEnvInfo = computed(() => logs.envs?.[state.env] ?? {})
 const envKeys = computed(() => Object.keys(logs.envs || {}))
@@ -41,7 +50,9 @@ let syncingFromUrl = false
 let writeTimer = 0
 
 function getLevels(svc) {
-  return logs.getLevels(svc.host, svc.app, svc.levels, state.env)
+  // 当前服务用活动主机（可能被用户切换过），其它服务用各自默认 host
+  const host = svc && svc === currentService.value ? currentHost.value : (svc?.host || '')
+  return logs.getLevels(host, svc.app, svc.levels, state.env)
 }
 
 function getServicesForEnv(envKey) {
@@ -60,7 +71,7 @@ function findServiceIndex(env, app, host) {
   const list = logs.getServices(env)
   if (!app) return -1
   if (host) {
-    const exact = list.findIndex((s) => s.app === app && s.host === host)
+    const exact = list.findIndex((s) => s.app === app && logs.getServiceHosts(s).includes(host))
     if (exact >= 0) return exact
   }
   return list.findIndex((s) => s.app === app)
@@ -74,7 +85,7 @@ function buildQuery() {
     const svc = logs.getServices(state.env)[state.selectedIdx]
     if (svc) {
       q.set('app', svc.app)
-      q.set('host', svc.host)
+      q.set('host', currentHost.value || svc.host)
       q.set('level', state.selectedLevel)
       if (state.routeFile) q.set('file', state.routeFile)
     } else {
@@ -114,7 +125,12 @@ function applySearchParams(search = location.search) {
     const app = q.get('app')
     const host = q.get('host') || ''
     const idx = findServiceIndex(state.env, app, host)
-    if (idx >= 0) state.selectedIdx = idx
+    if (idx >= 0) {
+      state.selectedIdx = idx
+      const svc = logs.getServices(state.env)[idx]
+      const hosts = logs.getServiceHosts(svc)
+      state.activeHost = host && hosts.includes(host) ? host : (svc?.host || '')
+    }
 
     const level = q.get('level')
     if (level && LOG_LEVELS.includes(level)) state.selectedLevel = level
@@ -171,6 +187,7 @@ function selectEnv(env) {
 function selectService(idx) {
   if (idx === state.selectedIdx) return
   state.selectedIdx = idx
+  state.activeHost = logs.getServices(state.env)[idx]?.host || ''
   state.routeFile = ''
   scheduleWriteUrl()
 }
@@ -179,18 +196,22 @@ function selectEnvService(env, idx) {
   const same = env === state.env && idx === state.selectedIdx
   state.env = env
   state.selectedIdx = idx
+  state.activeHost = logs.getServices(env)[idx]?.host || ''
   if (state.view !== 'viewer') state.view = 'viewer'
   if (!same) state.routeFile = ''
   scheduleWriteUrl()
 }
 
-function openLog(idx, level, env = state.env) {
+/** 打开日志；host 可选，仪表盘的实例卡片用它把选中实例带到日志页 */
+function openLog(idx, level, env = state.env, host = '') {
+  const svc = logs.getServices(env)[idx]
   state.env = env
   state.selectedIdx = idx
+  const hosts = logs.getServiceHosts(svc)
+  state.activeHost = host && hosts.includes(host) ? host : (svc?.host || '')
   if (LOG_LEVELS.includes(level)) state.selectedLevel = level
   state.view = 'viewer'
   state.routeFile = ''
-  const svc = logs.getServices(env)[idx]
   if (svc) {
     access.track(access.ACTION.VIEW_LOG, {
       env,
@@ -199,6 +220,17 @@ function openLog(idx, level, env = state.env) {
       level: state.selectedLevel,
     })
   }
+  scheduleWriteUrl()
+}
+
+/** 切换当前服务的主机（多实例部署）；host 必须属于该服务 */
+function setHost(host) {
+  const svc = currentService.value
+  if (!svc) return
+  if (!logs.getServiceHosts(svc).includes(host)) return
+  if (host === currentHost.value) return
+  state.activeHost = host
+  state.routeFile = ''
   scheduleWriteUrl()
 }
 
@@ -220,6 +252,7 @@ function setRouteFile(name) {
 const instance = Object.assign(state, {
   services,
   currentService,
+  currentHost,
   mro,
   currentEnvInfo,
   envKeys,
@@ -232,6 +265,7 @@ const instance = Object.assign(state, {
   selectService,
   selectEnvService,
   openLog,
+  setHost,
   setLevel,
   setRouteFile,
   initUrlSync,

@@ -66,6 +66,10 @@
       />
 
       <div class="fb-actions" @click.stop>
+        <label v-if="showSqlToggle" class="fb-sql" :class="{ on: hideSql }" title="隐藏 SQL 语句行（可在设置中关闭该开关）">
+          <el-switch :model-value="hideSql" size="small" aria-label="隐藏 SQL" @update:model-value="setHideSql" />
+          <span>隐藏 SQL</span>
+        </label>
         <span v-if="resultCount != null" class="fb-count" title="过滤后可见行数">
           {{ resultCount }} 行
         </span>
@@ -148,14 +152,18 @@
  */
 import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
 import { useLogViewFilters } from '../../composables/useLogViewFilters'
+import { useSettings } from '../../composables/useSettings'
 
 defineProps({
   resultCount: { type: Number, default: null },
 })
 
+const settings = useSettings()
 const {
   textFilters,
   filterHistory,
+  hideSql,
+  setHideSql,
   addTextFilter,
   updateTextFilter,
   removeTextFilter,
@@ -164,6 +172,9 @@ const {
   applyHistory,
   clearFilterHistory,
 } = useLogViewFilters()
+
+/** 设置里可隐藏该快捷开关，避免不需要 SQL 过滤时占用过滤条 */
+const showSqlToggle = computed(() => settings.cfg.behavior.showSqlQuickFilter !== false)
 
 const draft = ref('')
 const focused = ref(false)
@@ -426,6 +437,20 @@ onBeforeUnmount(() => clearTimeout(blurTimer))
   margin-left: auto;
 }
 .fb-actions .el-button + .el-button { margin-left: 0 }
+/* 快捷过滤：隐藏 SQL */
+.fb-sql {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-right: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--t3);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+.fb-sql.on { color: var(--ac) }
 
 .fb-panel {
   position: absolute;

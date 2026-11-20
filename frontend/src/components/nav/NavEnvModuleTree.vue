@@ -29,7 +29,7 @@
         @click="nav.selectEnvService(nav.env, i)"
       >
         <div class="nm">{{ row.svc.module }}</div>
-        <div class="ip">{{ row.svc.host }}</div>
+        <div class="ip">{{ row.ip }}</div>
         <div v-if="nav.selectedIdx === i" class="lvs" @click.stop>
           <template v-if="row.levels.length">
             <el-tag
@@ -68,11 +68,16 @@ const nav = useNavigation()
 /** 一次算好级别与探测状态，模板不再重复读索引 */
 const rows = computed(() => {
   void logs.indexVersion
-  return nav.services.map((svc) => ({
-    svc,
-    levels: nav.getLevels(svc),
-    hasIndex: !!logs.getIndexMeta(svc.host, svc.app, nav.env),
-  }))
+  return nav.services.map((svc, i) => {
+    // 当前服务显示实际使用的主机（多实例切换后随之变化），其余显示各自默认 host
+    const ip = nav.selectedIdx === i ? nav.currentHost : svc.host
+    return {
+      svc,
+      ip,
+      levels: nav.getLevels(svc),
+      hasIndex: !!logs.getIndexMeta(ip, svc.app, nav.env),
+    }
+  })
 })
 
 function tabLabel(key) {

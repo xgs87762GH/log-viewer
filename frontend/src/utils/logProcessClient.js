@@ -65,6 +65,7 @@ export function processLogSync({
   lines,
   includeTerms = [],
   excludeTerms = [],
+  hideSql = false,
   expandedIds,
   collapsedIds,
   foldEnabled,
@@ -73,10 +74,10 @@ export function processLogSync({
   wrapCols,
 }) {
   const entries = groupLogEntries(lines, { detectLevel, isContinuation })
-  const hasText = includeTerms.length > 0 || excludeTerms.length > 0
+  const hasText = includeTerms.length > 0 || excludeTerms.length > 0 || hideSql
   const filtered = hasText
     ? filterLogEntries(entries, lines, (blob) =>
-        matchBlobFilters(blob, includeTerms, excludeTerms),
+        matchBlobFilters(blob, includeTerms, excludeTerms, hideSql),
       )
     : entries
   const viewRows = buildViewRows({
@@ -125,6 +126,7 @@ export function processLogAsync(args) {
       id,
       includeTerms: args.includeTerms || [],
       excludeTerms: args.excludeTerms || [],
+      hideSql: !!args.hideSql,
       expandedIds: args.expandedIds instanceof Set
         ? [...args.expandedIds]
         : [...(args.expandedIds || [])],

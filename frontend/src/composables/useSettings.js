@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { THEMES, LOG_PALETTES } from '../constants/themes'
 import { CONTEXT_CONFIG, clampContextConfig } from '../constants/logContextConfig'
+import { LOG_LIMITS } from '../constants/logLimits'
 import { mixHex, withAlpha } from '../utils/color'
 
 /**
@@ -27,6 +28,8 @@ const DEFAULTS = {
     maxLines: 10000,
     wordWrap: true,
     tailMB: 10,
+    /** 是否在过滤条显示「隐藏 SQL」快捷开关 */
+    showSqlQuickFilter: true,
     /** 日志预览超行是否折叠（仅影响展示，不丢数据） */
     foldOverLimit: true,
     /** 开启折叠时：单条日志视觉行数超过该值才折叠；折叠为限高预览，正文不截断 */
@@ -188,12 +191,18 @@ function setBehavior(key, value) {
   save()
 }
 
-/** 拉取日志时统一读取（保证已 load，且数值合法） */
+/**
+ * 拉取日志时统一读取（保证已 load，且数值合法）。
+ * maxLines 固定为 0：不再按行数截断，实际行数由 tailMB 决定；
+ * 状态栏仍统计行数，只是不再出现「行数上限」。
+ */
 function getFetchLimits() {
   const b = cfg.behavior || {}
-  const maxLines = Math.min(100000, Math.max(1000, Number(b.maxLines) || 10000))
-  const tailMB = Math.min(100, Math.max(1, Number(b.tailMB) || 10))
-  return { maxLines, tailMB, tailBytes: Math.round(tailMB * 1024 * 1024) }
+  const tailMB = Math.min(
+    LOG_LIMITS.tailMB.max,
+    Math.max(LOG_LIMITS.tailMB.min, Number(b.tailMB) || LOG_LIMITS.tailMB.default),
+  )
+  return { maxLines: 0, tailMB, tailBytes: Math.round(tailMB * 1024 * 1024) }
 }
 
 function reset() {

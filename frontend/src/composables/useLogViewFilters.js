@@ -6,6 +6,7 @@ import {
   saveFilterHistory,
   upsertFilterHistory,
 } from '../utils/filterHistory'
+import { SQL_FILTER_KEY } from '../constants/storageKeys.js'
 
 export { matchBlobFilters }
 
@@ -20,6 +21,21 @@ const textFilters = ref([])
 
 /** @type {import('vue').Ref<Array<{ id: string, sig: string, filters: Array, label: string, at: number }>>} */
 const filterHistory = ref(loadFilterHistory())
+
+/** 快捷过滤：隐藏 SQL 语句行；与文本条件叠加，独立持久化 */
+const hideSql = ref(false)
+try {
+  hideSql.value = localStorage.getItem(SQL_FILTER_KEY) === '1'
+} catch {}
+
+function setHideSql(on) {
+  const next = !!on
+  if (next === hideSql.value) return
+  hideSql.value = next
+  try {
+    localStorage.setItem(SQL_FILTER_KEY, next ? '1' : '0')
+  } catch {}
+}
 
 let seq = 0
 function nextId() {
@@ -158,7 +174,7 @@ function clearFilterHistory() {
 }
 
 function matchTextFilters(blob) {
-  return matchBlobFilters(blob, includeTerms.value, excludeTerms.value)
+  return matchBlobFilters(blob, includeTerms.value, excludeTerms.value, hideSql.value)
 }
 
 /** 导入 filterHistory 段后调用：过滤历史从 localStorage 重新读取 */
@@ -171,6 +187,8 @@ export function useLogViewFilters() {
     textFilters,
     includeTerms,
     excludeTerms,
+    hideSql,
+    setHideSql,
     filterHistory,
     addTextFilter,
     updateTextFilter,

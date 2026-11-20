@@ -52,6 +52,7 @@ function runQuery(msg) {
   const {
     includeTerms = [],
     excludeTerms = [],
+    hideSql = false,
     expandedIds = [],
     collapsedIds = [],
     foldEnabled = true,
@@ -60,7 +61,7 @@ function runQuery(msg) {
     wrapCols = 100,
   } = msg
 
-  const matcher = compileFilters(includeTerms, excludeTerms)
+  const matcher = compileFilters(includeTerms, excludeTerms, hideSql)
   const filtered = matcher ? filterEntriesByMatcher(entries, searchIndex, matcher) : entries
 
   ensureVisualCache(wordWrap, wrapCols)

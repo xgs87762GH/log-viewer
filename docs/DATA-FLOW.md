@@ -37,11 +37,11 @@ flowchart TD
 - 缓存键：`envKey|host|app|level|file|maxLines|tailMB`；`envKey` 必填，避免同名服务跨环境取错地址。
 - 非 `force` 时命中内存 LRU 直接返回同一份 `lines` 引用，不发请求。
 - 未命中时 `trackInflight` 让同键并发只发一次请求，`attachInflight` 让每个调用方独立脱离（全部脱离才中止底层请求）；超时 95 秒。
-- 请求 `GET /api/proxy?url=&tail=`，`tailBytes` 来自设置的 `tailMB`（默认 10MB）。
+- 请求 `GET /api/proxy?url=&tail=`，`tailBytes` 来自设置的 `tailMB`（默认 10MB，上限 1024MB）；前端超时按 `tailMB` 放大（每 MB 约 3s，至少 45s，最长 10 分钟）。
 
 **3. 后端代理**：`server.py` 加 Basic Auth 与 `Range: bytes=-N`；上游支持 Range 时按 64KB 分块流式转发，并回传 `X-Total-Size`、`X-Truncated`；不支持时整段读入后裁尾。目录探测超时 8 秒、带尾包 30/90 秒、整文件下载 300 秒。**后端不缓存日志正文**，只有带 hash 的 `/assets/` 强缓存 7 天。
 
-**4. 解析与写入内存**：读 `res.text()`；`X-Truncated=true` 时丢掉第一行残片；`takeLastLines()` 从末尾取最多 `maxLines` 行（默认 10000，大文本避免全量切分）。组装 `{ lines, size, downloadedBytes, truncated, lineCapped, filename, maxLines, tailMB, fromCache }` 后写入 LRU，然后 `releaseResponse()` 释放定时器与信号监听。响应头里的 `ETag` / `Last-Modified` 只记入缓存 meta，**当前未用于条件请求**（代理也未转发上游这两个头）。
+**4. 解析与写入内存**：读 `res.text()`；`X-Truncated=true` 时丢掉第一行残片；`takeLastLines()` 从末尾取最多 `maxLines` 行（默认 10000，上限 1,000,000；大文本避免全量切分）。组装 `{ lines, size, downloadedBytes, truncated, lineCapped, filename, maxLines, tailMB, fromCache }` 后写入 LRU，然后 `releaseResponse()` 释放定时器与信号监听。响应头里的 `ETag` / `Last-Modified` 只记入缓存 meta，**当前未用于条件请求**（代理也未转发上游这两个头）。
 
 **5. 生成视图行**：`rebuildViewRows()` 把 `lines` 与过滤词、折叠集合、换行、列宽交给 `processLogAsync()`。
 

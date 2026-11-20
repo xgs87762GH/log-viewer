@@ -85,6 +85,7 @@ import { Brush, EditPen, Operation, Folder } from '@element-plus/icons-vue'
 import { useSettings } from '../../composables/useSettings'
 import { useToast } from '../../composables/useToast'
 import { clampContextConfig } from '../../constants/logContextConfig'
+import { LOG_LIMITS } from '../../constants/logLimits'
 import { SETTINGS_SECTIONS } from '../../constants/settingsOptions'
 
 // 分区组件按文件名自动发现：新增分区只需放一个 Settings*.vue 并在 SETTINGS_SECTIONS 声明
@@ -154,8 +155,11 @@ function onSectionUpdate(payload = {}) {
 
 function clampBehavior() {
   const b = draft.behavior
-  b.maxLines = Math.min(100000, Math.max(1000, Number(b.maxLines) || 10000))
-  b.tailMB = Math.min(100, Math.max(1, Math.round(Number(b.tailMB) || 10)))
+  // 行数不再限制，只夹紧尾部大小
+  b.tailMB = Math.min(
+    LOG_LIMITS.tailMB.max,
+    Math.max(LOG_LIMITS.tailMB.min, Math.round(Number(b.tailMB) || LOG_LIMITS.tailMB.default)),
+  )
   b.foldMaxLines = Math.min(50000, Math.max(1, Number(b.foldMaxLines) || 5))
   const ctx = clampContextConfig({
     initialLines: b.contextInitialLines,
