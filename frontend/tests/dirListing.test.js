@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  parseDirMtime,
   extractLogFilesFromDirHtml,
   extractLogNamesFromDirHtml,
 } from '../src/utils/dirListing.js'
@@ -20,16 +21,24 @@ const DIR_HTML = `<html>
 <a href="readme.txt">readme.txt</a>              06-Nov-2026 16:14      1K
 </pre></body></html>`
 
-test('提取 .log 文件名与目录页大小，过滤目录项与非日志文件', () => {
+test('提取 .log 文件名、目录页大小与更新时间，过滤目录项与非日志文件', () => {
   assert.deepEqual(extractLogFilesFromDirHtml(DIR_HTML), [
-    { name: 'app_info.log', size: '66K' },
-    { name: 'app_info_2026-11-05_0.log', size: '97K' },
-    { name: 'app_warn.log', size: '1.2M' },
-    { name: 'app_debug.log', size: '' },
-    { name: 'app_error.log', size: '4096B' },
-    { name: 'app_trace.log', size: '' },
-    { name: 'app audit.log', size: '12K' },
+    { name: 'app_info.log', size: '66K', mtime: '2026-11-06 16:14' },
+    { name: 'app_info_2026-11-05_0.log', size: '97K', mtime: '2026-11-05 23:59' },
+    { name: 'app_warn.log', size: '1.2M', mtime: '2026-11-06 16:14' },
+    { name: 'app_debug.log', size: '', mtime: '2026-11-06 16:14' },
+    { name: 'app_error.log', size: '4096B', mtime: '2026-11-06 16:14' },
+    { name: 'app_trace.log', size: '', mtime: '2026-11-06 16:14' },
+    { name: 'app audit.log', size: '12K', mtime: '2026-11-06 16:14' },
   ])
+})
+
+test('parseDirMtime 兼容两种目录时间格式，解析不到返回空串', () => {
+  assert.equal(parseDirMtime('  06-Nov-2026 16:14     66K'), '2026-11-06 16:14')
+  assert.equal(parseDirMtime('2026-11-20 09:05  1.2M'), '2026-11-20 09:05')
+  assert.equal(parseDirMtime('2026-11-20T09:05:07'), '2026-11-20 09:05')
+  assert.equal(parseDirMtime('no time here'), '')
+  assert.equal(parseDirMtime(''), '')
 })
 
 test('重复 href 去重且保留首次出现的大小', () => {

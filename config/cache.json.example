@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "maxGB": 8,
+  "maxFileMB": 300,
+  "ttlDays": 30
+}

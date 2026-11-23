@@ -2,6 +2,7 @@
 """Log Viewer - Backend: config + proxy + access stats (SQLite)."""
 import http.server
 import json
+import re
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -13,6 +14,7 @@ import threading
 import time
 import socketserver
 import access_store
+import logcache
 from envfile import load_env
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,14 +36,31 @@ DIST_DIR = os.path.join(HERE, 'frontend', 'dist')
 _PROXY_CHUNK = 64 * 1024
 # 整文件下载与目录探测共用 opener，但探测的 8s 超时不适用于大文件
 DOWNLOAD_TIMEOUT_SEC = 300
+# 只缓存归档（写完不再变）；活跃文件持续增长，缓存必然过期
+_ARCHIVE_LOG_NAME = re.compile(r'_\d{4}-\d{2}-\d{2}_\d+\.log$', re.I)
+
+
+def _parse_log_url(url):
+    """从上游 URL 解析 (host, app, filename)；非日志文件返回 None。"""
+    try:
+        path = urllib.parse.urlparse(url).path
+    except Exception:
+        return None
+    segs = [s for s in path.split('/') if s]
+    if len(segs) < 3:
+        return None
+    filename = segs[-1]
+    if not filename.lower().endswith('.log'):
+        return None
+    return segs[-3], segs[-2], filename
 
 
 def read_version():
     try:
         with open(os.path.join(HERE, 'VERSION'), encoding='utf-8') as f:
-            return f.read().strip() or '1.2.0'
+            return f.read().strip() or '1.3.0'
     except Exception:
-        return '1.2.0'
+        return '1.3.0'
 
 
 APP_VERSION = read_version()
@@ -237,6 +256,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.handle_access_me()
             return
 
+        if parsed.path == '/api/cache/status':
+            self.handle_cache_status(parsed.query)
+            return
+
         # SPA：根路径与未知前端路由回落到 index.html
         if parsed.path in ('/', ''):
             self.path = '/index.html'
@@ -350,11 +373,47 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'backups': [b for b in backups if b],
         })
 
+    def handle_cache_status(self, query):
+        """返回某服务下已缓存的文件与全局用量，供前端在文件列表标记「本地」。"""
+        params = urllib.parse.parse_qs(query)
+        host = (params.get('host', [''])[0] or '').strip()
+        app = (params.get('app', [''])[0] or '').strip()
+        try:
+            entries = logcache.cache.list_entries(host, app)
+        except Exception:
+            entries = []
+        self.json_ok({
+            'enabled': logcache.cache.enabled,
+            'files': entries,
+            'stats': logcache.cache.stats(),
+        })
+
+    def _send_cached(self, hit):
+        """命中缓存时按原语义返回；读取失败返回 False，让调用方回源。"""
+        try:
+            with open(hit['path'], 'rb') as f:
+                data = f.read()
+        except OSError:
+            return False
+        self.send_response(200)
+        self.send_header('Content-Type', hit['content_type'] or 'text/plain; charset=utf-8')
+        self.send_header('Access-Control-Expose-Headers', 'X-Total-Size, X-Truncated, X-Cache')
+        self.send_header('Content-Length', str(len(data)))
+        if hit['total_size']:
+            self.send_header('X-Total-Size', str(hit['total_size']))
+        if hit['truncated']:
+            self.send_header('X-Truncated', 'true')
+        self.send_header('X-Cache', 'hit')
+        self.end_headers()
+        self.wfile.write(data)
+        return True
+
     def handle_proxy(self, query):
         """单次转发一次日志请求。
 
         ⚠️ 不得在此加重试、定时预取或后台轮询：上游是内网日志服务，
         高频请求会把它打挂；一次请求失败就直接返回错误，由前端提示用户重试。
+        唯一的本地优化是「用户自己请求过的归档尾段」落盘，二次查看不再回源。
         """
         params = urllib.parse.parse_qs(query)
         url = params.get('url', [None])[0]
@@ -366,6 +425,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         passwd = params.get('pass', [DEFAULT_PASS])[0]
         tail = params.get('tail', [None])[0]
         tail_bytes = int(tail) if tail and tail.isdigit() else None
+
+        # 只缓存归档文件的尾部请求；活跃文件持续增长，缓存必然过期
+        cache_key = None
+        if tail_bytes and logcache.cache.enabled:
+            parsed = _parse_log_url(url)
+            if parsed and _ARCHIVE_LOG_NAME.search(parsed[2]):
+                cache_key = logcache.cache.key(parsed[0], parsed[1], parsed[2], tail_bytes)
+                hit = logcache.cache.lookup(cache_key)
+                if hit and self._send_cached(hit):
+                    return
 
         try:
             req = urllib.request.Request(url)
@@ -410,6 +479,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         self.send_header('X-Truncated', 'true')
                     self.end_headers()
                     self.wfile.write(data)
+                    if cache_key:
+                        logcache.cache.store(cache_key, data, {
+                            'total_size': total_size or len(data),
+                            'content_type': ct,
+                            'truncated': truncated,
+                        })
                     return
 
                 # Range / 目录：先发头再分块写，降低大尾包首字节等待
@@ -430,12 +505,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
 
                 written = 0
+                # 边转发边收集：命中条件满足时顺带落盘，不额外发起下载
+                buf = bytearray() if cache_key else None
+                cache_limit = logcache.cache.max_file_bytes if cache_key else 0
                 while True:
                     chunk = resp.read(_PROXY_CHUNK)
                     if not chunk:
                         break
                     self.wfile.write(chunk)
                     written += len(chunk)
+                    if buf is not None:
+                        if len(buf) + len(chunk) <= cache_limit:
+                            buf.extend(chunk)
+                        else:
+                            buf = None  # 超过单文件上限，放弃缓存
+                if buf:
+                    logcache.cache.store(cache_key, bytes(buf), {
+                        'total_size': total_size or written,
+                        'content_type': ct,
+                        'truncated': truncated,
+                    })
                 # 无 Content-Length 时用已写字节数补截断判断
                 if total_size is not None and body_len is None and written < total_size:
                     pass  # 头已发出，无法再改 X-Truncated；Range 通常带 Content-Length
@@ -623,6 +712,13 @@ if __name__ == '__main__':
     DEFAULT_PASS = args.password
 
     access_store.purge_old()
+    # 缓存过期清理只在启动时做一次，不进入请求路径
+    try:
+        expired = logcache.cache.purge_expired()
+        if expired:
+            print('  Cache: purged {} expired entries'.format(expired))
+    except Exception:
+        pass
     cfg = access_store.load_access_config()
     has_dist = os.path.isdir(DIST_DIR) and os.path.isfile(os.path.join(DIST_DIR, 'index.html'))
 

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>日志中心 · 环境切换布局预览</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --s1: #161b22;
+    --s2: #1c2128;
+    --s3: #21262d;
+    --bd: #30363d;
+    --bd-soft: #24292f;
+    --t1: #e6edf3;
+    --t2: #b1bac4;
+    --t3: #7d8590;
+    --ac: #58a6ff;
+    --ac-soft: rgba(88,166,255,.14);
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --dbg: #a371f7;
+    --trc: #6e7681;
+    --r: 8px;
+    --r-sm: 6px;
+    --sp1: 4px; --sp2: 8px; --sp3: 12px; --sp4: 16px; --sp5: 24px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--t1);
+    font: 13px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    padding: 20px 24px 48px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--t3); font-size: 12px; margin-bottom: 16px; }
+
+  .plans { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .plans button {
+    padding: 7px 14px; border-radius: 999px; border: 1px solid var(--bd);
+    background: var(--s1); color: var(--t2); cursor: pointer; font-size: 13px;
+  }
+  .plans button.on { border-color: var(--ac); background: var(--ac-soft); color: var(--ac); font-weight: 600; }
+
+  .mock { display: none; }
+  body[data-plan="a"] .mock[data-plan="a"],
+  body[data-plan="b"] .mock[data-plan="b"],
+  body[data-plan="c"] .mock[data-plan="c"],
+  body[data-plan="d"] .mock[data-plan="d"] { display: block; }
+
+  /* 方案 D 专属：环境分段带数量、搜索快捷键、收藏星标 */
+  .seg .s { position: relative; }
+  .seg .s .n { margin-left: 4px; font-size: 10px; color: var(--t3); }
+  .seg .s.on .n { color: var(--ac); }
+  .search .kbd { margin-left: auto; color: var(--t3); border: 1px solid var(--bd); border-radius: 3px; padding: 0 4px; font-size: 10px; }
+  .fav .star-btn { color: var(--t3); opacity: 0; transition: opacity .15s; cursor: pointer; }
+  .fav:hover .star-btn { opacity: 1 }
+  .fav .star-btn.on { color: var(--warn); opacity: 1 }
+  .mod .inst { margin-left: 6px; font-size: 10px; color: var(--ac); border: 1px solid rgba(88,166,255,.35); border-radius: 999px; padding: 0 5px; }
+  .mod .row { display: flex; align-items: center; }
+  .empty { padding: 18px 10px; text-align: center; color: var(--t3); font-size: 12px; }
+
+  .note {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--bd-soft);
+    border-radius: var(--r); background: var(--s1); font-size: 12px; color: var(--t2);
+  }
+  .note b { color: var(--t1); }
+  .note .good { color: var(--ok); }
+  .note .bad { color: var(--warn); }
+
+  /* 三栏壳 */
+  .shell {
+    display: grid; grid-template-columns: 168px auto 1fr;
+    height: 520px; border: 1px solid var(--bd); border-radius: var(--r);
+    overflow: hidden; background: var(--bg);
+  }
+  .shell.two { grid-template-columns: 168px 1fr; }
+
+  .nav { background: var(--s1); border-right: 1px solid var(--bd); padding: 12px 8px; display: flex; flex-direction: column; gap: 4px; }
+  .nav .brand { font-size: 12px; color: var(--t3); padding: 4px 8px 10px; letter-spacing: .04em; }
+  .nav .item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--r-sm); color: var(--t2); }
+  .nav .item.on { background: var(--ac-soft); color: var(--ac); font-weight: 600; }
+  .nav .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .6; }
+
+  .side { background: var(--s1); border-right: 1px solid var(--bd); display: flex; flex-direction: column; min-width: 0; }
+  .side.wide { width: 260px; }
+
+  /* 方案 A：环境下拉 + 搜索 */
+  .a-head { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid var(--bd); }
+  .select {
+    flex: 1; display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; border: 1px solid var(--bd); border-radius: var(--r-sm);
+    background: var(--s2); color: var(--t1); font-size: 12px;
+  }
+  .select .caret { color: var(--t3); }
+  .search {
+    display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--s2);
+    color: var(--t3); font-size: 12px;
+  }
+  .mods { overflow: auto; padding: 6px; }
+  .mod { padding: 8px 10px; border-radius: var(--r-sm); }
+  .mod .nm { color: var(--t1); font-size: 13px; }
+  .mod .ip { color: var(--t3); font-family: Consolas, monospace; font-size: 11px; }
+  .mod.on { background: var(--s3); box-shadow: inset 2px 0 0 var(--ac); }
+  .mod.on .nm { color: var(--ac); font-weight: 600; }
+  .lvs { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .lv { padding: 0 7px; border-radius: 999px; font-size: 11px; line-height: 18px; border: 1px solid; }
+  .lv.info { color: var(--ac); border-color: rgba(88,166,255,.4); }
+  .lv.warn { color: var(--warn); border-color: rgba(210,153,34,.4); }
+  .lv.err  { color: var(--err); border-color: rgba(248,81,73,.4); }
+  .lv.dbg  { color: var(--dbg); border-color: rgba(163,113,247,.4); }
+  .lv.trc  { color: var(--trc); border-color: var(--bd); }
+
+  /* 方案 B：树 */
+  .tree { padding: 8px 6px; overflow: auto; }
+  .tree .env { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: var(--r-sm); color: var(--t2); font-weight: 600; }
+  .tree .env.on { color: var(--ac); background: var(--ac-soft); }
+  .tree .env .cnt { margin-left: auto; font-size: 11px; color: var(--t3); font-weight: 400; }
+  .tree .kids { padding-left: 14px; border-left: 1px dashed var(--bd); margin: 2px 0 6px 14px; }
+  .tree .kid { padding: 5px 8px; border-radius: var(--r-sm); color: var(--t2); font-size: 12px; }
+  .tree .kid.on { background: var(--s3); color: var(--t1); }
+
+  /* 方案 C：segmented + 最近/收藏 */
+  .seg { display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid var(--bd); }
+  .seg .s { flex: 1; text-align: center; padding: 5px 0; border-radius: var(--r-sm); color: var(--t3); font-size: 12px; }
+  .seg .s.on { background: var(--s3); color: var(--t1); font-weight: 600; box-shadow: inset 0 0 0 1px var(--bd); }
+  .c-body { overflow: auto; padding: 6px; }
+  .group-label { padding: 8px 8px 4px; font-size: 11px; color: var(--t3); letter-spacing: .06em; }
+  .fav { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--r-sm); color: var(--t2); font-size: 12px; }
+  .fav .star { color: var(--warn); }
+  .fav .recent { color: var(--t3); font-size: 11px; margin-left: auto; }
+
+  /* 主内容占位 */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--bd); }
+  .crumb { color: var(--t3); font-size: 12px; }
+  .crumb b { color: var(--t2); font-weight: 600; }
+  .chip { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--bd); font-size: 11px; color: var(--t3); }
+  .chip.ac { color: var(--ac); border-color: rgba(88,166,255,.4); }
+  .lines { flex: 1; overflow: hidden; padding: 6px 0; font-family: Consolas, 'Courier New', 'Microsoft YaHei', monospace; font-size: 12px; }
+  .ln { display: flex; gap: 10px; padding: 1px 14px; white-space: nowrap; }
+  .ln .no { color: var(--t3); width: 44px; text-align: right; flex: none; }
+  .ln .tx { color: var(--t2); overflow: hidden; text-overflow: ellipsis; }
+  .ln .tx .lvw { color: var(--ac); }
+  .ln .tx .lvw.w { color: var(--warn); }
+  .ln:first-child { background: rgba(88,166,255,.06); }
+  .status { display: flex; gap: 8px; align-items: center; padding: 8px 14px; border-top: 1px solid var(--bd); font-size: 11px; color: var(--t3); }
+
+  .legend { margin-top: 12px; color: var(--t3); font-size: 12px; }
+  .legend code { background: var(--s2); padding: 1px 5px; border-radius: 4px; color: var(--t2); }
+</style>
+</head>
+<body data-plan="d">
+  <h1>日志中心 · 环境切换布局预览</h1>
+  <div class="sub">三个方案都用同一份假数据（4 环境 / 12 服务），点击上方按钮切换对比。真实页面在 <code>http://localhost:8090</code>。</div>
+
+  <div class="plans">
+    <button data-go="a">方案 A：环境下拉 + 服务搜索</button>
+    <button data-go="b">方案 B：左侧环境树（可折叠）</button>
+    <button data-go="c">方案 C：环境分段 + 收藏/最近</button>
+    <button class="on" data-go="d">★ 方案 D：A + C 融合（推荐）</button>
+  </div>
+
+  <!-- ───────── 方案 A ───────── -->
+  <section class="mock" data-plan="a">
+    <div class="note">
+      <span><b>改动</b>：顶部 card Tab 换成一行下拉 + 搜索框，模块列表获得更多高度</span>
+      <span class="good">优点：省一行高度、找服务快</span>
+      <span class="bad">缺点：切环境要「点开下拉 → 选」两步</span>
+    </div>
+    <div class="shell">
+      <aside class="nav">
+        <div class="brand">LOG VIEWER</div>
+        <div class="item"><span class="dot"></span>仪表盘</div>
+        <div class="item on"><span class="dot"></span>日志聚合</div>
+        <div class="item"><span class="dot"></span>统计</div>
+        <div class="item"><span class="dot"></span>设置</div>
+      </aside>
+      <aside class="side wide">
+        <div class="a-head">
+          <div class="select"><span>🚀 生产环境</span><span class="caret">▾</span></div>
+        </div>
+        <div class="a-head" style="border-bottom:1px solid var(--bd)">
+          <div class="search" style="flex:1"><span>⌕</span><span>搜索模块 / IP</span></div>
+        </div>
+        <div class="mods">
+          <div class="mod"><div class="nm">AM 聚合服务</div><div class="ip">10.106.133.89</div></div>
+          <div class="mod on">
+            <div class="nm">PPC 原子服务</div>
+            <div class="ip">10.106.133.82</div>
+            <div class="lvs"><span class="lv info">INFO</span><span class="lv warn">WARN</span><span class="lv err">ERROR</span><span class="lv dbg">DEBUG</span><span class="lv trc">TRACE</span></div>
+          </div>
+          <div class="mod"><div class="nm">飞机健康服务</div><div class="ip">10.106.133.22</div></div>
+          <div class="mod"><div class="nm">AHP 计算服务</div><div class="ip">10.106.133.24</div></div>
+          <div class="mod"><div class="nm">Phoenix AM</div><div class="ip">10.106.133.99</div></div>
+          <div class="mod"><div class="nm">CC 服务</div><div class="ip">10.106.133.80</div></div>
+          <div class="mod"><div class="nm">AM 原子服务</div><div class="ip">10.106.133.87</div></div>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="toolbar">
+          <span class="crumb">生产环境 › <b>PPC 原子服务</b> <span class="chip">10.106.133.82</span> / atomPpc_info.log</span>
+          <span class="chip ac" style="margin-left:auto">2 实例</span>
+        </div>
+        <div class="lines">
+          <div class="ln"><span class="no">1</span><span class="tx">2026-11-23 14:44:31.362 <span class="lvw">[INFO ]</span> SELECT tid,parent_tid,air_model_name FROM t_ahp_air_model</span></div>
+          <div class="ln"><span class="no">2</span><span class="tx">2026-11-23 14:44:31.410 <span class="lvw">[INFO ]</span> 计算任务开始，批次 BC20261123144431</span></div>
+          <div class="ln"><span class="no">3</span><span class="tx">2026-11-23 14:44:31.502 <span class="lvw w">[WARN ]</span> 机型 A320 缺少维护计划，跳过</span></div>
+          <div class="ln"><span class="no">4</span><span class="tx">2026-11-23 14:44:31.668 <span class="lvw">[INFO ]</span> 计算完成，耗时 1.2s，共 128 条</span></div>
+        </div>
+        <div class="status"><span class="chip">主机 10.106.133.82</span><span class="chip">更新 14:44:31</span><span class="chip">128 行</span><span class="chip">文件 74.3 MB</span></div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ───────── 方案 B ───────── -->
+  <section class="mock" data-plan="b">
+    <div class="note">
+      <span><b>改动</b>：去掉顶部 Tab，左侧改成「环境 → 服务」可折叠树，默认展开当前环境</span>
+      <span class="good">优点：一屏看全所有环境，切环境只点一次</span>
+      <span class="bad">缺点：环境多时列表长，需要滚动</span>
+    </div>
+    <div class="shell two">
+      <aside class="nav">
+        <div class="brand">LOG VIEWER</div>
+        <div class="item"><span class="dot"></span>仪表盘</div>
+        <div class="item on"><span class="dot"></span>日志聚合</div>
+        <div class="item"><span class="dot"></span>统计</div>
+        <div class="item"><span class="dot"></span>设置</div>
+      </aside>
+      <div style="display:grid;grid-template-columns:260px 1fr;min-width:0">
+        <aside class="side">
+          <div class="tree">
+            <div class="env"><span>▾</span>🚀 生产环境<span class="cnt">12</span></div>
+            <div class="kids">
+              <div class="kid">AM 聚合服务</div>
+              <div class="kid on">PPC 原子服务 · 2 实例</div>
+              <div class="kid">飞机健康服务 · 2 实例</div>
+              <div class="kid">AHP 计算服务 · 2 实例</div>
+              <div class="kid">Phoenix AM</div>
+              <div class="kid">CC 服务</div>
+            </div>
+            <div class="env"><span>▸</span>🎯 预发环境<span class="cnt">2</span></div>
+            <div class="env"><span>▸</span>🧪 测试环境<span class="cnt">11</span></div>
+            <div class="env"><span>▸</span>🔧 开发环境<span class="cnt">13</span></div>
+          </div>
+        </aside>
+        <main class="main">
+          <div class="toolbar">
+            <span class="crumb">生产环境 › <b>PPC 原子服务</b> <span class="chip">10.106.133.82</span> / atomPpc_info.log</span>
+            <span class="chip ac" style="margin-left:auto">2 实例</span>
+          </div>
+          <div class="lines">
+            <div class="ln"><span class="no">1</span><span class="tx">2026-11-23 14:44:31.362 <span class="lvw">[INFO ]</span> SELECT tid,parent_tid,air_model_name FROM t_ahp_air_model</span></div>
+            <div class="ln"><span class="no">2</span><span class="tx">2026-11-23 14:44:31.410 <span class="lvw">[INFO ]</span> 计算任务开始，批次 BC20261123144431</span></div>
+            <div class="ln"><span class="no">3</span><span class="tx">2026-11-23 14:44:31.502 <span class="lvw w">[WARN ]</span> 机型 A320 缺少维护计划，跳过</span></div>
+            <div class="ln"><span class="no">4</span><span class="tx">2026-11-23 14:44:31.668 <span class="lvw">[INFO ]</span> 计算完成，耗时 1.2s，共 128 条</span></div>
+          </div>
+          <div class="status"><span class="chip">主机 10.106.133.82</span><span class="chip">更新 14:44:31</span><span class="chip">128 行</span></div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── 方案 C ───────── -->
+  <section class="mock" data-plan="c">
+    <div class="note">
+      <span><b>改动</b>：环境改成紧凑分段控件；上方「收藏 + 最近访问」，下方全部服务，带搜索</span>
+      <span class="good">优点：切环境一步到位，常用服务不用每次找</span>
+      <span class="bad">缺点：新增「收藏/最近」状态，改动比 A 稍大</span>
+    </div>
+    <div class="shell">
+      <aside class="nav">
+        <div class="brand">LOG VIEWER</div>
+        <div class="item"><span class="dot"></span>仪表盘</div>
+        <div class="item on"><span class="dot"></span>日志聚合</div>
+        <div class="item"><span class="dot"></span>统计</div>
+        <div class="item"><span class="dot"></span>设置</div>
+      </aside>
+      <aside class="side wide">
+        <div class="seg">
+          <div class="s">开发</div>
+          <div class="s">测试</div>
+          <div class="s">预发</div>
+          <div class="s on">生产</div>
+        </div>
+        <div class="a-head" style="border-bottom:1px solid var(--bd)">
+          <div class="search" style="flex:1"><span>⌕</span><span>搜索模块 / IP</span></div>
+        </div>
+        <div class="c-body">
+          <div class="group-label">收藏</div>
+          <div class="fav"><span class="star">★</span>飞机健康服务<span class="recent">2 实例</span></div>
+          <div class="fav"><span class="star">★</span>AHP 计算服务<span class="recent">2 实例</span></div>
+          <div class="group-label">最近访问</div>
+          <div class="fav"><span>↺</span>PPC 原子服务<span class="recent">刚刚</span></div>
+          <div class="fav"><span>↺</span>AM 聚合服务<span class="recent">10 分钟前</span></div>
+          <div class="group-label">全部服务 · 12</div>
+          <div class="mod on">
+            <div class="nm">PPC 原子服务</div>
+            <div class="ip">10.106.133.82</div>
+            <div class="lvs"><span class="lv info">INFO</span><span class="lv warn">WARN</span><span class="lv err">ERROR</span></div>
+          </div>
+          <div class="mod"><div class="nm">飞机健康服务</div><div class="ip">10.106.133.22</div></div>
+          <div class="mod"><div class="nm">AHP 计算服务</div><div class="ip">10.106.133.24</div></div>
+          <div class="mod"><div class="nm">Phoenix AM</div><div class="ip">10.106.133.99</div></div>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="toolbar">
+          <span class="crumb">生产环境 › <b>PPC 原子服务</b> <span class="chip">10.106.133.82</span> / atomPpc_info.log</span>
+          <span class="chip ac" style="margin-left:auto">2 实例</span>
+        </div>
+        <div class="lines">
+          <div class="ln"><span class="no">1</span><span class="tx">2026-11-23 14:44:31.362 <span class="lvw">[INFO ]</span> SELECT tid,parent_tid,air_model_name FROM t_ahp_air_model</span></div>
+          <div class="ln"><span class="no">2</span><span class="tx">2026-11-23 14:44:31.410 <span class="lvw">[INFO ]</span> 计算任务开始，批次 BC20261123144431</span></div>
+          <div class="ln"><span class="no">3</span><span class="tx">2026-11-23 14:44:31.502 <span class="lvw w">[WARN ]</span> 机型 A320 缺少维护计划，跳过</span></div>
+          <div class="ln"><span class="no">4</span><span class="tx">2026-11-23 14:44:31.668 <span class="lvw">[INFO ]</span> 计算完成，耗时 1.2s，共 128 条</span></div>
+        </div>
+        <div class="status"><span class="chip">主机 10.106.133.82</span><span class="chip">更新 14:44:31</span><span class="chip">128 行</span></div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ───────── 方案 D：A + C 融合 ───────── -->
+  <section class="mock" data-plan="d">
+    <div class="note">
+      <span><b>融合</b>：环境用<b>下拉</b>（A）+ 搜索过滤（A）+ 收藏/最近（C）</span>
+      <span class="good">环境下拉带服务数、搜索 <code>/</code> 聚焦、服务项显示实例数、↑↓ 选择 + Enter 打开</span>
+      <span class="bad">需要新增「收藏 / 最近」状态（localStorage）</span>
+    </div>
+    <div class="shell">
+      <aside class="nav">
+        <div class="brand">LOG VIEWER</div>
+        <div class="item"><span class="dot"></span>仪表盘</div>
+        <div class="item on"><span class="dot"></span>日志聚合</div>
+        <div class="item"><span class="dot"></span>统计</div>
+        <div class="item"><span class="dot"></span>设置</div>
+      </aside>
+      <aside class="side wide">
+        <div class="a-head">
+          <div class="select">
+            <span>🚀 生产环境</span>
+            <span class="chip" style="margin-left:6px">12</span>
+            <span class="caret" style="margin-left:auto">▾</span>
+          </div>
+        </div>
+        <div class="a-head" style="border-bottom:1px solid var(--bd)">
+          <div class="search" style="flex:1">
+            <span>⌕</span><span>搜索模块 / IP</span><span class="kbd">/</span>
+          </div>
+        </div>
+        <div class="c-body">
+          <div class="group-label">收藏</div>
+          <div class="fav"><span class="star">★</span>飞机健康服务<span class="recent">2 实例</span><span class="star-btn on">★</span></div>
+          <div class="fav"><span class="star">★</span>AHP 计算服务<span class="recent">2 实例</span><span class="star-btn on">★</span></div>
+          <div class="group-label">最近访问</div>
+          <div class="fav"><span>↺</span>PPC 原子服务<span class="recent">刚刚</span><span class="star-btn">☆</span></div>
+          <div class="fav"><span>↺</span>AM 聚合服务<span class="recent">10 分钟前</span><span class="star-btn">☆</span></div>
+          <div class="group-label">全部服务 · 12</div>
+          <div class="mod on">
+            <div class="row"><span class="nm">PPC 原子服务</span><span class="inst">2 实例</span></div>
+            <div class="ip">10.106.133.82</div>
+            <div class="lvs"><span class="lv info">INFO</span><span class="lv warn">WARN</span><span class="lv err">ERROR</span></div>
+          </div>
+          <div class="mod"><div class="row"><span class="nm">飞机健康服务</span><span class="inst">2 实例</span></div><div class="ip">10.106.133.22</div></div>
+          <div class="mod"><div class="row"><span class="nm">AHP 计算服务</span><span class="inst">2 实例</span></div><div class="ip">10.106.133.24</div></div>
+          <div class="mod"><div class="row"><span class="nm">AM 聚合服务</span></div><div class="ip">10.106.133.89</div></div>
+          <div class="mod"><div class="row"><span class="nm">Phoenix AM</span></div><div class="ip">10.106.133.99</div></div>
+          <div class="mod"><div class="row"><span class="nm">CC 服务</span></div><div class="ip">10.106.133.80</div></div>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="toolbar">
+          <span class="crumb">生产环境 › <b>PPC 原子服务</b> <span class="chip">10.106.133.82</span> / atomPpc_info.log</span>
+          <span class="chip ac" style="margin-left:auto">2 实例</span>
+        </div>
+        <div class="lines">
+          <div class="ln"><span class="no">1</span><span class="tx">2026-11-23 14:44:31.362 <span class="lvw">[INFO ]</span> SELECT tid,parent_tid,air_model_name FROM t_ahp_air_model</span></div>
+          <div class="ln"><span class="no">2</span><span class="tx">2026-11-23 14:44:31.410 <span class="lvw">[INFO ]</span> 计算任务开始，批次 BC20261123144431</span></div>
+          <div class="ln"><span class="no">3</span><span class="tx">2026-11-23 14:44:31.502 <span class="lvw w">[WARN ]</span> 机型 A320 缺少维护计划，跳过</span></div>
+          <div class="ln"><span class="no">4</span><span class="tx">2026-11-23 14:44:31.668 <span class="lvw">[INFO ]</span> 计算完成，耗时 1.2s，共 128 条</span></div>
+        </div>
+        <div class="status"><span class="chip">主机 10.106.133.82</span><span class="chip">更新 14:44:31</span><span class="chip">128 行</span></div>
+      </main>
+    </div>
+  </section>
+
+  <div class="legend">
+    说明：三个方案都保留「一级导航 + 二级导航 + 主内容」三栏骨架，只改环境切换与找服务的方式。
+    方案 B 需要把环境从顶部移到左侧；方案 C 需要新增「收藏 / 最近访问」的本地存储。
+  </div>
+
+<script>
+  const buttons = [...document.querySelectorAll('.plans button')]
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      buttons.forEach((b) => b.classList.toggle('on', b === btn))
+      document.body.dataset.plan = btn.dataset.go
+    })
+  })
+</script>
+</body>
+</html>

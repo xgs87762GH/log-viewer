@@ -2,6 +2,7 @@ import { reactive, computed } from 'vue'
 import { LOG_LEVELS } from '../constants/logLevels'
 import { useLogs } from './useLogs'
 import { useAccessLog } from './useAccessLog'
+import { useNavPrefs } from './useNavPrefs'
 
 /**
  * useNavigation —— UI 导航状态（模块级单例）
@@ -31,6 +32,7 @@ const state = reactive({
 
 const logs = useLogs()
 const access = useAccessLog()
+const prefs = useNavPrefs()
 
 const services = computed(() => logs.getServices(state.env))
 const currentService = computed(() => services.value[state.selectedIdx])
@@ -219,6 +221,8 @@ function openLog(idx, level, env = state.env, host = '') {
       app: svc.app || '',
       level: state.selectedLevel,
     })
+    // 只有真正打开日志才计入「最近访问」，仅选中模块不记录，避免污染
+    prefs.recordRecent(env, svc.app)
   }
   scheduleWriteUrl()
 }

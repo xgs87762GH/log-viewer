@@ -301,6 +301,7 @@ function emptyIndexEntry(rule, fileCount = 0) {
 function buildEntryFromFiles(dirFiles, host, app, envKey) {
   const rule = getLogFileRule(host, app, envKey)
   const sizeByName = new Map(dirFiles.map((f) => [f.name, f.size]))
+  const mtimeByName = new Map(dirFiles.map((f) => [f.name, f.mtime || '']))
   const allNames = dirFiles.map((f) => f.name)
   const levels = []
   const files = {}
@@ -309,6 +310,8 @@ function buildEntryFromFiles(dirFiles, host, app, envKey) {
     const list = matchLevelFiles(allNames, app, lv, rule).map((f) => ({
       ...f,
       size: sizeByName.get(f.name) || '',
+      // 目录页时间（到分钟）；旧索引没有该字段时为空，由 UI 回退到文件名日期
+      mtime: mtimeByName.get(f.name) || '',
     }))
     if (!list.length) continue
     levels.push(lv)

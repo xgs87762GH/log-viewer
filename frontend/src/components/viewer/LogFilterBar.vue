@@ -70,6 +70,19 @@
           <el-switch :model-value="hideSql" size="small" aria-label="隐藏 SQL" @update:model-value="setHideSql" />
           <span>隐藏 SQL</span>
         </label>
+        <el-tooltip
+          :content="matchMode === 'and' ? '多个包含条件：全部满足（点击改为任一满足）' : '多个包含条件：任一满足（点击改为全部满足）'"
+          placement="top"
+          :show-after="400"
+        >
+          <button
+            type="button"
+            class="fb-mode"
+            :class="{ or: matchMode === 'or' }"
+            :aria-label="`多个包含条件的关系：${matchMode === 'and' ? '全部满足' : '任一满足'}`"
+            @click="setMatchMode(matchMode === 'and' ? 'or' : 'and')"
+          >{{ matchMode === 'and' ? 'AND' : 'OR' }}</button>
+        </el-tooltip>
         <span v-if="resultCount != null" class="fb-count" title="过滤后可见行数">
           {{ resultCount }} 行
         </span>
@@ -164,6 +177,8 @@ const {
   filterHistory,
   hideSql,
   setHideSql,
+  matchMode,
+  setMatchMode,
   addTextFilter,
   updateTextFilter,
   removeTextFilter,
@@ -451,6 +466,28 @@ onBeforeUnmount(() => clearTimeout(blurTimer))
   transition: color var(--dur) var(--ease);
 }
 .fb-sql.on { color: var(--ac) }
+/* 包含条件关系：AND（默认）/ OR（高亮） */
+.fb-mode {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--bd);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--t3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  line-height: 22px;
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.fb-mode:hover { color: var(--ac); border-color: var(--ac) }
+.fb-mode:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px }
+.fb-mode.or { color: var(--ac); border-color: var(--ac); background: var(--surf-active) }
 
 .fb-panel {
   position: absolute;

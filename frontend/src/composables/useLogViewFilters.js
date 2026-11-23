@@ -6,7 +6,7 @@ import {
   saveFilterHistory,
   upsertFilterHistory,
 } from '../utils/filterHistory'
-import { SQL_FILTER_KEY } from '../constants/storageKeys.js'
+import { FILTER_MODE_KEY, SQL_FILTER_KEY } from '../constants/storageKeys.js'
 
 export { matchBlobFilters }
 
@@ -34,6 +34,21 @@ function setHideSql(on) {
   hideSql.value = next
   try {
     localStorage.setItem(SQL_FILTER_KEY, next ? '1' : '0')
+  } catch {}
+}
+
+/** 包含条件之间的关系：and = 全部满足，or = 任一满足；排除条件始终是 OR 丢弃 */
+const matchMode = ref('and')
+try {
+  if (localStorage.getItem(FILTER_MODE_KEY) === 'or') matchMode.value = 'or'
+} catch {}
+
+function setMatchMode(mode) {
+  const next = mode === 'or' ? 'or' : 'and'
+  if (next === matchMode.value) return
+  matchMode.value = next
+  try {
+    localStorage.setItem(FILTER_MODE_KEY, next)
   } catch {}
 }
 
@@ -174,7 +189,13 @@ function clearFilterHistory() {
 }
 
 function matchTextFilters(blob) {
-  return matchBlobFilters(blob, includeTerms.value, excludeTerms.value, hideSql.value)
+  return matchBlobFilters(
+    blob,
+    includeTerms.value,
+    excludeTerms.value,
+    hideSql.value,
+    matchMode.value,
+  )
 }
 
 /** 导入 filterHistory 段后调用：过滤历史从 localStorage 重新读取 */
@@ -189,6 +210,8 @@ export function useLogViewFilters() {
     excludeTerms,
     hideSql,
     setHideSql,
+    matchMode,
+    setMatchMode,
     filterHistory,
     addTextFilter,
     updateTextFilter,

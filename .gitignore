@@ -13,6 +13,7 @@ backup/
 # 本地私有配置（含内网 host / 白名单 IP / 账号），勿提交
 config/logs.json
 config/access.json
+config/cache.json
 .env
 
 # CodeBuddy IDE 本地数据

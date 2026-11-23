@@ -12,6 +12,7 @@
           <span class="path-env">{{ nav.currentEnvInfo.label || nav.env }}</span>
           <span class="path-sep">›</span>
           <span class="path-mod">{{ nav.currentService.module }}</span>
+          <span v-if="serviceHosts.length > 1" class="path-host" :title="`当前实例：${nav.currentHost}`">{{ nav.currentHost }}</span>
           <span class="path-sep">/</span>
           <span class="path-file">{{ selectedFile || (nav.selectedLevel + '.log') }}</span>
         </div>
@@ -86,6 +87,8 @@
         :log-files="logFiles"
         :filtered-log-files="filteredLogFiles"
         :files-loading="filesLoading"
+        :cached-files="cachedFiles"
+        :cache-stats="cacheStats"
         :index-hint="indexHint"
         :rule-hint="ruleHint"
         :result-count="filteredRowCount"
@@ -183,6 +186,8 @@
 
       <div class="status">
         <span v-if="truncated" class="ui-chip ui-chip--warn">已截断（仅显示尾部）</span>
+        <span v-if="serviceHosts.length > 1" class="ui-chip" :title="`当前实例：${nav.currentHost}`">主机 {{ nav.currentHost }}</span>
+        <span v-if="lastLogTime" class="ui-chip" title="日志末行时间（精确到秒）">更新 {{ lastLogTime }}</span>
         <span class="ui-chip"><b>{{ displayLines }}</b> 行</span>
         <span class="ui-chip" :class="filteredRowCount ? 'ui-chip--accent' : ''"><b>{{ filteredRowCount }}</b> 过滤后</span>
         <span v-if="tools.activeFindQuery.value" class="ui-chip ui-chip--accent ui-find-chip" @click="tools.openDrawer()">
@@ -234,6 +239,8 @@ import { buildRowLayout, findStartIndex, findEndIndex, clampScrollTop } from '..
 import { processLogAsync, processLogSync } from '../../utils/logProcessClient'
 import { filterLogFilesByDate, defaultLogFile } from '../../utils/logFileFilter'
 import { isAtTop, isAtBottom } from '../../utils/logScrollState'
+import { lastLineTime } from '../../utils/logTime'
+import { useLogCache } from '../../composables/useLogCache'
 import { Loading, Refresh, DocumentCopy, Document, Clock, Search, Lock } from '@element-plus/icons-vue'
 import LogToolsDrawer from './LogToolsDrawer.vue'
 import LogFoldBar from './LogFoldBar.vue'
@@ -245,11 +252,16 @@ const settings = useSettings()
 const nav = useNavigation()
 /** 多实例服务的主机列表；长度 > 1 时才显示切换器 */
 const serviceHosts = computed(() => logs.getServiceHosts(nav.currentService))
+const cacheState = useLogCache()
+/** 已缓存到本地的文件名 → 条目信息，供历史文件列表标记 */
+const cachedFiles = computed(() => cacheState.files.value)
+const cacheStats = computed(() => cacheState.stats.value)
 const toast = useToast()
 const {
   includeTerms,
   excludeTerms,
   hideSql,
+  matchMode,
   clearTextFilters,
   textFilters,
 } = useLogViewFilters()
@@ -332,6 +344,8 @@ let pendingScrollToEnd = false
 let pendingScrollForce = false
 /** 自动置底的截止时间戳：大日志分批布局期间持续追底，用户滚动即清零 */
 let wantBottomUntil = 0
+/** 设置页改了尾部大小/行数限制：回到日志页时需要重载一次 */
+let pendingTailReload = false
 let lastBox = { w: 0, h: 0 }
 const hlCache = new Map()
 
@@ -353,6 +367,9 @@ const ariaLogLabel = computed(() => {
   if (error.value) return '日志加载失败'
   return `日志内容，共 ${filteredRowCount.value} 行`
 })
+
+/** 当前文件的更新时间：取已加载日志的末行时间，精确到秒，零额外请求 */
+const lastLogTime = computed(() => lastLineTime(lines.value))
 
 const layout = computed(() => buildRowLayout(viewRows.value, baseRowH.value))
 const totalHeight = computed(() => layout.value.totalHeight)
@@ -600,7 +617,8 @@ function safeHighlight(line, level, kw) {
 
 // 包含当前主机：切换多实例主机时清空文件选择并重新加载
 const logKey = computed(() => `${nav.env}|${nav.selectedIdx}|${nav.currentHost}|${nav.selectedLevel}`)
-const serviceKey = computed(() => `${nav.env}|${nav.selectedIdx}`)
+// 含主机：换服务或换实例时都清空日期筛选，避免另一台没有该日归档导致列表为空
+const serviceKey = computed(() => `${nav.env}|${nav.selectedIdx}|${nav.currentHost}`)
 
 function onScroll() {
   if (scrollRaf) return
@@ -639,6 +657,7 @@ async function rebuildViewRows() {
     includeTerms: includeTerms.value,
     excludeTerms: excludeTerms.value,
     hideSql: hideSql.value,
+    matchMode: matchMode.value,
     expandedIds: expandedIds.value,
     collapsedIds: collapsedIds.value,
     foldEnabled: foldEnabled.value,
@@ -667,7 +686,7 @@ function scheduleRebuild() {
 }
 
 watch(
-  [includeTerms, excludeTerms, hideSql, expandedIds, collapsedIds, foldEnabled, foldMaxLines, wordWrap, wrapCols],
+  [includeTerms, excludeTerms, hideSql, matchMode, expandedIds, collapsedIds, foldEnabled, foldMaxLines, wordWrap, wrapCols],
   () => {
     scheduleRebuild()
   },
@@ -729,6 +748,9 @@ async function ensureFileList({ force = false, keepSelection = false, hydrate = 
 
 function applyFileList(files, keepSelection) {
   logFiles.value = files
+  // 文件列表变化后同步一次本地缓存状态（30s 内去重），只标记与当前尾部大小匹配的条目
+  const svc = nav.currentService
+  if (svc) void cacheState.refresh(nav.currentHost, svc.app, settings.getFetchLimits().tailBytes)
   const prev = selectedFile.value
   const prefer = nav.routeFile
   if (prefer && files.some((f) => f.name === prefer)) {
@@ -1127,10 +1149,14 @@ onMounted(() => {
     void meta
   })
   unsubSettings = settings.onCommit((meta = {}) => {
-    if (meta.needsReload && nav.view === 'viewer' && nav.currentService) {
+    if (!meta.needsReload) return
+    if (nav.view === 'viewer' && nav.currentService) {
       toast.success('设置已应用，正在按新限制重新加载…')
       loadLog({ skipList: true, force: true })
+      return
     }
+    // 在设置页保存时本组件不在前台，记下标记，切回日志页立即按新限制重载
+    pendingTailReload = true
   })
   if (nav.currentService) loadLog()
 })
@@ -1149,6 +1175,11 @@ onActivated(() => {
       pendingScrollToEnd = false
       pendingScrollForce = false
       scrollToEnd(force)
+    }
+    // 设置页改过尾部大小：切回日志页时按新限制重载一次
+    if (pendingTailReload && nav.currentService) {
+      pendingTailReload = false
+      loadLog({ skipList: true, force: true })
     }
   })
 })
@@ -1209,6 +1240,17 @@ onUnmounted(() => {
 .path-env { color: var(--ac); font-weight: 700; flex-shrink: 0 }
 .path-sep { color: var(--bd2); flex-shrink: 0 }
 .path-mod { color: var(--t2); font-weight: 600; overflow: hidden; text-overflow: ellipsis }
+/* 多实例时标出当前是哪台机器，避免两台路径完全相同看不出区别 */
+.path-host {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--s2);
+  color: var(--t3);
+  font-family: var(--font-log);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .path-file { color: var(--t1); font-weight: 600; overflow: hidden; text-overflow: ellipsis }
 .tb-actions { flex-shrink: 0 }
 /* 多实例主机切换：窄屏也保持一行，不挤压路径 */

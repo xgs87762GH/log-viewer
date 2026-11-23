@@ -39,7 +39,19 @@ flowchart TD
 - 未命中时 `trackInflight` 让同键并发只发一次请求，`attachInflight` 让每个调用方独立脱离（全部脱离才中止底层请求）；超时 95 秒。
 - 请求 `GET /api/proxy?url=&tail=`，`tailBytes` 来自设置的 `tailMB`（默认 10MB，上限 1024MB）；前端超时按 `tailMB` 放大（每 MB 约 3s，至少 45s，最长 10 分钟）。
 
-**3. 后端代理**：`server.py` 加 Basic Auth 与 `Range: bytes=-N`；上游支持 Range 时按 64KB 分块流式转发，并回传 `X-Total-Size`、`X-Truncated`；不支持时整段读入后裁尾。目录探测超时 8 秒、带尾包 30/90 秒、整文件下载 300 秒。**后端不缓存日志正文**，只有带 hash 的 `/assets/` 强缓存 7 天。
+**3. 后端代理**：`server.py` 加 Basic Auth 与 `Range: bytes=-N`；上游支持 Range 时按 64KB 分块流式转发，并回传 `X-Total-Size`、`X-Truncated`；不支持时整段读入后裁尾。目录探测超时 8 秒、带尾包 30/90 秒、整文件下载 300 秒。
+
+代理层带一个**可选的磁盘缓存**（`logcache.py` + `config/cache.json`）：
+
+- 只缓存**归档文件**（文件名匹配 `_YYYY-MM-DD_N.log`）的尾部请求，key 为 `host|app|file|tail`；
+- 未命中时边转发边把数据块收集到内存，结束后写 `data/logcache/{host}/{app}/{file}.tail{N}`；先写 `.part` 再原子替换，失败只记日志、不影响本次响应；
+- 命中时直接读本地文件返回，并带上首次记录的 `Content-Type` / `X-Total-Size` / `X-Truncated`，响应头 `X-Cache: hit`；
+- 按字节总量 LRU：超过 `maxGB` 时按 `last_access` 升序删除到 90% 水位；单文件超过 `maxFileMB` 不进缓存；启动时按 `ttlDays` 清理一次过期条目；
+- **不缓存活跃文件**（持续增长，命中必然过期），也不做预取或定时刷新——只由用户的实际请求触发。
+
+前端通过 `GET /api/cache/status?host=&app=` 读取某服务下已缓存的文件与全局用量（同一服务 30 秒内去重），在文件下拉标记「本地」并显示 `缓存 N · X MB`；该接口只读本地 SQLite，不触达上游。
+
+其余响应（目录、活跃文件、整文件下载）**不缓存**；只有带 hash 的 `/assets/` 强缓存 7 天，`index.html` 为 `no-cache`。
 
 **4. 解析与写入内存**：读 `res.text()`；`X-Truncated=true` 时丢掉第一行残片；`takeLastLines()` 从末尾取最多 `maxLines` 行（默认 10000，上限 1,000,000；大文本避免全量切分）。组装 `{ lines, size, downloadedBytes, truncated, lineCapped, filename, maxLines, tailMB, fromCache }` 后写入 LRU，然后 `releaseResponse()` 释放定时器与信号监听。响应头里的 `ETag` / `Last-Modified` 只记入缓存 meta，**当前未用于条件请求**（代理也未转发上游这两个头）。
 
@@ -62,6 +74,7 @@ flowchart TD
 | 文件名与级别索引 | localStorage `log_viewer_file_index_v1` | 持久，按日软刷新，跨标签同步 |
 | 过滤历史、设置、导航折叠、抽屉固定态 | localStorage | 持久 |
 | 构建产物 `/assets/*` | 浏览器 HTTP 缓存 | 7 天 |
+| 归档尾部片段 | 磁盘 `data/logcache` + SQLite `data/cache.db` | 按字节 LRU（默认 8 GB），`ttlDays` 过期清理 |
 
 完整的本地存储键见 [SYSTEM.md](SYSTEM.md)。
 

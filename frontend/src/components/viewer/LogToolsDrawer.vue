@@ -71,6 +71,8 @@
             :log-files="logFiles"
             :filtered-log-files="filteredLogFiles"
             :files-loading="filesLoading"
+            :cached-files="cachedFiles"
+            :cache-stats="cacheStats"
             :index-hint="indexHint"
             :rule-hint="ruleHint"
             @update:dateFilter="(v) => emit('update:dateFilter', v)"
@@ -109,6 +111,8 @@ defineProps({
   logFiles: { type: Array, default: () => [] },
   filteredLogFiles: { type: Array, default: () => [] },
   filesLoading: { type: Boolean, default: false },
+  cachedFiles: { type: Object, default: () => ({}) },
+  cacheStats: { type: Object, default: null },
   indexHint: { type: String, default: '' },
   ruleHint: { type: String, default: '' },
   resultCount: { type: Number, default: null },

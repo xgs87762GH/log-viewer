@@ -66,9 +66,9 @@ IS_WIN = os.name == "nt"
 def read_version() -> str:
     try:
         # utf-8-sig：容忍外部编辑器 / PowerShell 写入的 BOM
-        return (HERE / "VERSION").read_text(encoding="utf-8-sig").strip() or "1.2.0"
+        return (HERE / "VERSION").read_text(encoding="utf-8-sig").strip() or "1.3.0"
     except Exception:
-        return "1.2.0"
+        return "1.3.0"
 
 
 APP_VERSION = read_version()
@@ -674,6 +674,82 @@ def tail_file(path: Path, lines: int = 40, follow: bool = False):
         pause()
 
 
+def _fmt_size(n) -> str:
+    value = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{int(value)} B" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
+
+
+def _write_cache_config(max_gb: float) -> float:
+    """更新 config/cache.json 的容量上限，写入前备份原文件。"""
+    cfg_file = CONFIG_DIR / "cache.json"
+    data = {}
+    if cfg_file.is_file():
+        try:
+            data = json.loads(cfg_file.read_text(encoding="utf-8-sig"))
+        except Exception:
+            data = {}
+        try:
+            (HERE / "backup").mkdir(exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            (HERE / "backup" / f"cache-{stamp}.json").write_bytes(cfg_file.read_bytes())
+        except OSError:
+            pass
+    value = round(max(0.1, min(200.0, float(max_gb))), 2)
+    data["maxGB"] = value
+    data.setdefault("enabled", True)
+    data.setdefault("maxFileMB", 300)
+    data.setdefault("ttlDays", 30)
+    cfg_file.parent.mkdir(exist_ok=True)
+    cfg_file.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return value
+
+
+def cache_command():
+    """查看 / 清理磁盘缓存，或调整容量上限（python manage.py cache）。"""
+    import logcache
+
+    args = sys.argv[2:]
+    clear = "--clear" in args
+    max_gb = None
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--max-gb" and i + 1 < len(args):
+            try:
+                max_gb = float(args[i + 1])
+            except ValueError:
+                pass
+            i += 2
+            continue
+        if arg.startswith("--max-gb="):
+            try:
+                max_gb = float(arg.split("=", 1)[1])
+            except ValueError:
+                pass
+        i += 1
+
+    if max_gb is not None:
+        value = _write_cache_config(max_gb)
+        logcache.cache.config = logcache.load_config()
+        print(f"  [√] 缓存上限已设为 {value:g} GB（config/cache.json）")
+    if clear:
+        removed = logcache.cache.clear()
+        print(f"  [√] 已清空缓存：{removed} 个条目")
+
+    s = logcache.cache.stats()
+    print("\n磁盘缓存:")
+    print(f"  状态: {'启用' if s['enabled'] else '已关闭'}")
+    print(f"  用量: {_fmt_size(s['bytes'])} / {_fmt_size(s['maxBytes'])}（{s['files']} 个文件）")
+    print(f"  单文件上限: {_fmt_size(s['maxFileBytes'])}，过期天数: {s['ttlDays']:g}")
+    print(f"  本次进程: 命中 {s['hits']} 次 / 未命中 {s['misses']} 次")
+    print(f"  目录: {s['root']}")
+    pause()
+
+
 def view_log_menu():
     while True:
         print("""
@@ -817,6 +893,7 @@ def main():
             "status": show_status,
             "restart": restart_all,
             "logs": view_log_menu,
+            "cache": cache_command,
             "build": lambda: (print("\n构建前端..."), build_frontend(force=True), pause()),
             "dev": start_dev,
             "open": open_browser,
@@ -828,7 +905,7 @@ def main():
             fn()
             return
         print(f"未知命令: {cmd}")
-        print("可用: start | stop | status | restart | build | dev | open | shortcut | logs")
+        print("可用: start | stop | status | restart | build | dev | open | shortcut | logs | cache")
         sys.exit(1)
 
     notice_shown = False

@@ -66,6 +66,7 @@ export function processLogSync({
   includeTerms = [],
   excludeTerms = [],
   hideSql = false,
+  matchMode = 'and',
   expandedIds,
   collapsedIds,
   foldEnabled,
@@ -77,7 +78,7 @@ export function processLogSync({
   const hasText = includeTerms.length > 0 || excludeTerms.length > 0 || hideSql
   const filtered = hasText
     ? filterLogEntries(entries, lines, (blob) =>
-        matchBlobFilters(blob, includeTerms, excludeTerms, hideSql),
+        matchBlobFilters(blob, includeTerms, excludeTerms, hideSql, matchMode),
       )
     : entries
   const viewRows = buildViewRows({
@@ -127,6 +128,7 @@ export function processLogAsync(args) {
       includeTerms: args.includeTerms || [],
       excludeTerms: args.excludeTerms || [],
       hideSql: !!args.hideSql,
+      matchMode: args.matchMode === 'or' ? 'or' : 'and',
       expandedIds: args.expandedIds instanceof Set
         ? [...args.expandedIds]
         : [...(args.expandedIds || [])],

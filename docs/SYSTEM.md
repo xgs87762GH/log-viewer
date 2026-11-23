@@ -65,9 +65,10 @@ frontend/src/
 │                     # themes / timing / settingsOptions / logSearchTools / version
 │                     # storageKeys（所有本地存储键的唯一来源）/ versionCheck
 ├── utils/            # apiClient / logParser / logEntries / logViewRows / logProcessClient
-│                     # logFilterMatch / logFind / logVirtualLayout / logFileIndex
+│                     # logFilterMatch / logSqlFilter / logFind / logVirtualLayout / logFileIndex
 │                     # highlightTerms / toolDrawerState / filterHistory / logDownload
-│                     # logContextWindow / logTextMetrics / dirListing / color
+│                     # logContextWindow / logTextMetrics / dirListing / logTime
+│                     # serviceHosts / color
 │                     # downloadName / configBundle / versionCheck
 ├── workers/          # logProcess.worker.js
 └── styles/           # global.css（静态 token、UI 原子类、v-html 样式）
@@ -80,14 +81,15 @@ frontend/src/
 | 端点 | 用途 |
 | --- | --- |
 | `GET /config/logs.json` | 环境与服务配置；`access.json` 明确拒绝对外提供 |
-| `GET /api/proxy?url=&tail=` | 加 Basic Auth 与 `Range: bytes=-N`，流式回传日志尾部与 `X-Total-Size` / `X-Truncated` |
+| `GET /api/proxy?url=&tail=` | 加 Basic Auth 与 `Range: bytes=-N`，流式回传日志尾部与 `X-Total-Size` / `X-Truncated`；归档文件的同区间二次请求命中 `data/logcache`，附 `X-Cache: hit` |
+| `GET /api/cache/status?host=&app=` | 返回该服务下已缓存的文件（`file/tail/size/totalSize/lastAccess`）与全局用量（`files/bytes/maxBytes`），供前端在文件列表标记「本地」 |
 | `GET /api/download?url=&file=` | 不带 tail，整文件流式下载，带附件头与总大小 |
 | `POST /api/access/hello\|ping\|event` | 在线心跳与操作埋点 |
 | `GET /api/access/me\|online\|recent\|summary` | 统计查询，后三者仅白名单 IP |
 | `GET /api/config/export` | 返回 `logs.json` / `access.json`，仅白名单 IP |
 | `POST /api/config/import` | 写回服务端配置，仅白名单 IP；1MB 上限、结构校验、备份后原子写 |
 
-`/api/download` 的路由必须排在 SPA fallback 之前；只有 `/assets/` 下带 hash 的构建产物设置了 7 天强缓存，**代理响应不缓存日志正文**。
+`/api/download` 的路由必须排在 SPA fallback 之前；只有 `/assets/` 下带 hash 的构建产物设置了 7 天强缓存，`index.html` 为 `no-cache`。代理响应默认不缓存日志正文，**唯一例外是归档文件的尾部片段**：用户自己请求过一次后落盘到 `data/logcache`，二次查看命中本地，按字节 LRU 淘汰（`logcache.py`、`config/cache.json`）。活跃文件永不缓存。
 
 版本更新检查**不经过后端**：前端直连 `api.github.com` 的公开 tags 接口（端点在 `constants/versionCheck.js`），只读、不携带任何内网信息，失败或限流时静默降级；结果按 1 小时缓存在 localStorage。
 
@@ -100,6 +102,7 @@ frontend/src/
 | `log_viewer_nav_l1_collapsed` / `log_viewer_nav_l2_collapsed` | localStorage | 两级导航折叠 |
 | `log_viewer_file_index_v1` | localStorage | 文件名、级别索引与目录页大小，按日软刷新、跨标签失效 |
 | `log_viewer_filter_history` | localStorage | 过滤条件历史（最多 15 条） |
+| `log_viewer_hide_sql_v1` | localStorage | 「隐藏 SQL」快捷过滤开关 |
 | `log_viewer_tools_drawer_v1` | localStorage | 搜索工具抽屉是否固定 |
 | `log_viewer_access_sid` | sessionStorage | 在线会话标识 |
 | `log_viewer_version_check` | localStorage | GitHub 最新 tag 与检查时间，1 小时缓存 |

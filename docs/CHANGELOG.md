@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| 当前版本 | `1.2.0` |
+| 当前版本 | `1.3.0` |
 | 版本源 | `VERSION`（主源）、前端包与锁文件、`frontend/src/constants/version.js`、`frontend/index.html`、`server.py` / `manage.py` 兜底值 |
 | 历史发布说明 | [`RELEASE_NOTES_v1.0.1.md`](../RELEASE_NOTES_v1.0.1.md) |
-| 本版变更 | 见下文「v1.2.0」；提交顺序以 `git log` 为准 |
+| 本版变更 | 见下文「v1.3.0」；提交顺序以 `git log` 为准 |
 | 发布分支 | `main`（推送至 `origin/main`） |
 
 ## 已发布基线（v1.0.1）
@@ -100,6 +100,34 @@
 - 明确禁止对日志服务器做定时轮询，并在 `useLogs.js`、`LogViewer.loadLog`、`server.py handle_proxy` 与 `docs/DESIGN.md` 写入硬约束。
 - 文档同步 README / FEATURES / DESIGN / CHANGELOG，`procutil.py` 列入项目结构。
 - 验证：构建、**118/118** 单测、5 个 Python 文件 `py_compile`、lint 0、`diff --check` 通过；真实浏览器核对抽屉四行布局、状态栏按钮、弹窗自适应、折叠预览、启动预检与日志轮转边界。
+
+## v1.3.0
+
+导航重构、过滤增强与本地缓存。
+
+**二级导航**
+
+- 环境切换从顶部 Tab 改为**下拉**（每项带服务数），切换即写回地址栏 `env`。
+- 新增服务搜索（`module / app / host` 任一匹配）；`/` 聚焦、`Esc` 清空，搜索时只保留「全部服务」的结果。
+- 新增**收藏**（按应用全局记、手动增删、FIFO 20）与**最近访问**（按环境 + 应用、LRU 8 条、展示 5 条、渲染层排除已收藏）。
+- 服务项显示「N 实例」；支持 `↑↓` 移动、`Enter` 打开、`focus-visible` 焦点环。
+
+**过滤**
+
+- 包含条件支持 **AND / OR** 切换（排除条件始终 OR 丢弃），选择持久化在 `log_viewer_filter_mode_v1`。
+- 新增「隐藏 SQL」快捷过滤：按「动词 + 结构」双条件判定 SQL 行，过滤条一键开关，设置页可关闭其显示。
+
+**日志加载与缓存**
+
+- 去掉「最大行数」限制：行数由「尾部下载」决定（1 ~ 1024 MB），状态栏保留行数统计。
+- 新增磁盘缓存 `logcache.py`：归档尾部片段按需落盘、按字节 LRU（默认 8 GB，`config/cache.json` 可调）、单文件 300 MB 上限、启动清理过期；`/api/cache/status` 供文件列表标注「本地」与用量，`python manage.py cache` 可查看 / 清空 / 调上限。
+- 文件下拉按更新时间倒序并显示 `日期 时:分 · 大小`；状态栏显示当前文件**末行时间**（精确到秒，零额外请求）。
+- 日志请求超时随尾部大小放大（每 MB 约 3 秒，最长 10 分钟）；`index.html` 改为 `no-cache`，避免升级后加载旧 bundle。
+
+**测试**
+
+- 前端新增 `navPrefs` 12 例、`logSqlFilter` 3 例、`logTime` 5 例、`logFileFilter` 排序 7 例、`serviceHosts` 4 例；合计 **149/149**。
+- 后端新增 `tests/test_logcache.py` **10 例**（key、命中、失效、上限、LRU 水位、清空、TTL、配置夹紧、按服务列表）。
 
 ## v1.2.0
 
